@@ -1,0 +1,35 @@
+{
+  "name": "hardcore-xml",
+  "version": "0.0.1",
+  "description": "xml parser as writable stream",
+  "main": "lib/node_modules/parser.js",
+  "scripts": {
+    "build": "gobble build lib --force",
+    "prepublish": "npm test",
+    "test": "npm run-script build && node test/test.js | tap-spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bathos/hardcore-xml.git"
+  },
+  "keywords": [
+    "xml",
+    "parser",
+    "stream",
+    "json",
+    "convert"
+  ],
+  "author": "Darien Maillet Valentine",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bathos/hardcore-xml/issues"
+  },
+  "homepage": "https://github.com/bathos/hardcore-xml#readme",
+  "devDependencies": {
+    "gobble": "^0.10.2",
+    "gobble-babel": "^5.1.0",
+    "gobble-cli": "^0.4.2",
+    "tap-spec": "^4.0.0",
+    "tape": "^4.0.0"
+  }
+}
