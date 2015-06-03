@@ -31,5 +31,8 @@
     "gobble-cli": "^0.4.2",
     "tap-spec": "^4.0.0",
     "tape": "^4.0.0"
+  },
+  "dependencies": {
+    "babel": "^5.4.7"
   }
 }
