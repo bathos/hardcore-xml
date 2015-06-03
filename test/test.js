@@ -56,7 +56,7 @@ tape('Parser Method Exposure', function(t) {
 });
 
 tape('Strict Document Parsing', function(t) {
-	t.plan(8)
+	t.plan(15);
 
 	hardcoreTest(
 		t,
@@ -88,29 +88,72 @@ tape('Strict Document Parsing', function(t) {
 
 	hardcoreTest(
 		t,
-		'<a/>',
-		'<a/>',
+		'<a/>', null,
 		'single empty element, self-closing'
 	);
 
 	hardcoreTest(
 		t,
-		'<a:b/>',
-		'<a:b/>',
+		'<a:b/>', null,
 		'single empty element, self-closing with namespace'
 	);
 
 	hardcoreTest(
 		t,
-		'<a b="3"/>',
-		'<a b="3"/>',
+		'<a b="3"/>', null,
 		'single empty element, self-closing with attribute'
 	);
 
 	hardcoreTest(
 		t,
-		'<a b:c="3"/>',
-		'<a b:c="3"/>',
+		'<a b:c="3"/>', null,
 		'single empty element, self-closing with attribute with namespace'
+	);
+
+	hardcoreTest(
+		t,
+		'<a:b:c/>', null,
+		'namespace element with a second colon in the name'
+	);
+
+	hardcoreTest(
+		t,
+		'<a xyz="123" pdq="456"/>', null,
+		'single empty element with multiple attributes'
+	);
+
+	hardcoreTest(
+		t,
+		'<a>text</a>',
+		'<a>\n\ttext\n</a>',
+		'single element with text node'
+	);
+
+	hardcoreTest(
+		t,
+		'<a>text<![CDATA[tex><t]]></a>',
+		'<a>\n\ttext\n\t<![CDATA[ tex><t ]]>\n</a>',
+		'single element with text and CDATA nodes'
+	);
+
+	hardcoreTest(
+		t,
+		'<a>text<![CDATA[text]]>text</a>',
+		'<a>\n\ttext\n\t<![CDATA[ text ]]>\n\ttext\n</a>',
+		'single element with text, CDATA, and text'
+	);
+
+	hardcoreTest(
+		t,
+		'<a><b></b></a>',
+		'<a>\n\t<b/>\n</a>',
+		'nested elements'
+	);
+
+	hardcoreTest(
+		t,
+		'<a><b>  </b><c a="3" b=\'4\'> <d>text</d> text  </c></a>',
+		'<a>\n\t<b/>\n\t<c a="3" b="4">\n\t\t<d>\n\t\t\ttext\n\t\t</d>\n\t\ttext\n\t</c>\n</a>',
+		'complex structure'
 	);
 });
