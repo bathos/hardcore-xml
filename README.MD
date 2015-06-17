@@ -13,12 +13,21 @@ XML and HTML parsing, editing, construction and transformation library for node.
       - [`normalize`](#normalize)
       - [`html`](#html)
       - [`target`](#target)
-   - [Strict vs Permissive Mode](#strict-vs-permissive-mode)
+   - [Parser Events in Strict and Permissive Mode](#parser-events-in-strict-and-permissive-mode)
+      - [Event: `error`](#event-error)
+      - [Event: `warning`](#event-warning)
+      - [Event: `wat`](#event-wat)
 - [Transformation](#transformation)
    - [`toXML()`](#toxml)
    - [`toObject()`](#toobject)
-   - [`toJSON()`](#tojson)
-   - [`toYAML()`](#toyaml)
+      - [Filtered Transforms](#filtered-transforms)
+      - [Plurality](#plurality)
+      - [Custom Transform](#custom-transform)
+   - [`toJSON()` and `toYAML()`](#tojson-and-toyaml)
+   - [Renamers](#renamers)
+      - [`hardcore.renamers.camel`](#hardcorerenamerscamel)
+      - [`hardcore.renamers.lower`](#hardcorerenamerslower)
+      - [`hardcore.renamers.snake`](#hardcorerenamerssnake)
 - [XML](#xml)
    - [Regular Nodes](#regular-nodes)
       - [`hardcore.xml.Document`](#hardcorexmldocument)
@@ -73,7 +82,7 @@ Here’s what you can do with it:
 ### Caveats
 
 While I think this might(?) currently be the most rigorous XML library for Node,
-it isn’t 100% spec compliant. For example, internode whitespace outside of the
+it isn’t truly spec compliant. For example, internode whitespace outside of the
 root element of a document is not preserved regardless of settings, and
 validation probably misses any number of finer stipulations in the spec.
 
@@ -84,13 +93,15 @@ This is mainly because no one has used a DTD since 2002 and yet they make up the
 vast majority of the XML spec -- it would be a lot to implement, and for what?
 It was weird enough to spend as much time as I did on a dead technology I
 figured, and anyway the point here was to parse the document and transform it,
-not to render it for an viewing human or process its actual data content.
+not to render it for a viewing human or process its actual data content.
 
 tl;dr the validation is mainly about grammar and doesn’t actually use DTDs
 
-Finally note that despite the fact that this library can help you get what you
-want from XML, it *is* still XML and you’ll still need to take a shower to get
-the icky feeling off after interacting with it.
+Finally note that using this library means coming in close contact with XML.
+All usual safety precautions apply: only use in a well-ventilated area and make
+sure a friend knows where you are. Have them check in on you occasionally.
+Hardcore Enterprises cannot be held responsible for emotional or physical harm
+caused by interaction with XML.
 
 ## Parsing
 
@@ -190,26 +201,50 @@ can pass in the corresponding constructor instead.
 If you do specify a target and the parsed body is not a valid example of that
 target, this will constitute an error.
 
-### Strict vs Permissive Mode
+### Parser Events in Strict and Permissive Mode
 
 In strict mode, if the parser hits something it thinks is invalid, it emits an
-error event and returns to its ghostly astral sleep realm. The errors objects
-are custom and hopefully you will agree, pretty damn informative.
+error event and returns to its silent astral sleep realm.
 
-In permissive mode, at the juncture where we would have emitted an error in
-strict mode, one of the following will happen:
+In permissive mode, it’s still possible to get a show-stopping error, but it
+isn’t common. Instead you’ll usually get a `warning` event or a `wat` event, and
+parsing will continue. The event’s value will still be an error object.
 
- - The parser will be like ‘I know what you meant bro/sis lol it’s cool.’ It
-   wil; fix the error. For example, an unescaped ampersand that was not part of
-   an entity in a text node is pretty obviously meant to be `&amp;`. A `warning`
-   event will be emitted for errors that it thinks it corrected.
- - The parser will be like ‘this node is busted.’ It can’t fix it because it
-   doesn’t know what it was supposed to be. But it does see a clear enough
-   beginning and ending, so it decides to ignore the problem and continue. In
-   this case, there will be a `wat` event to let you know a node had to be
-   ignored.
- - The parser will be like ‘um .. no.’ It thinks the document is unparsable
-   garbage. You’ll get an `error` event. 
+#### Event: `error`
+
+An error, regardless of mode, means that parsing has ceased. The error objects
+are fancy business -- messages are specific and they include the offending
+string when possible, with a big red shame arrow pointing at the nexus of sin.
+
+There are two types of error -- HardcoreSyntaxError and HardcoreTypeError. The
+first is associated with ‘grammatical’ errors, especially those which prevent
+hardcore from being able to interpret what was ‘meant’. In contrast, the second
+usually occurs when the meaning of a given part is clear but nonetheless doesn’t
+constitute a valid value. The distinction isn’t exactly scientifically precise
+though.
+
+#### Event: `warning`
+
+A warning event indicates that the parser encountered something invalid, but
+it’s pretty sure it knew what you meant and was able to correct it. The most
+common example would be illegal ampersands or whatever. While illegal, they’re
+not actually grammatically ambiguous so it’s easy to fix. Another common
+example would be unquoted or missing attribute values.
+
+Certain ‘errors’ can get by in permissive mode without a warning event -- for
+example, it won’t consider technically-illegal-but-for-no-good-reason stuff like
+`< tag>` to be worth mentioning, and non-ASCII whitespace chars will silently be
+considered valid as whitespace in places where whitespace is required. 
+
+#### Event: `wat`
+
+A wat event is more serious. These indicate errors where recovery usually
+amounts to ignoring an entire node, or a part of one (like a malformed
+attribute). A wat could even mean there are unbalanced element tags -- this,
+too, can sometimes be ‘corrected’ using the same sort of logic a browser might
+when dealing with malformed HTML, but that doesn’t mean the output will match
+your expectations, so be wary. Internally, permissive mode is called ‘sloppy’
+mode for a reason.
 
 ## Transformation
 
@@ -262,9 +297,200 @@ despite the name of the former.
 
 ### `toObject()`
 
-### `toJSON()`
+While the parsed representation is already an object, it likely isn’t the one
+you really want if, for example, you’re using the XML as a data source.
 
-### `toYAML()`
+There are a number of existing node modules that convert XML to objects. Some
+have a lot of helpful options, but none gave me quite what I needed -- this was
+the impetus for hardcore.
+
+XML doesn’t map neatly to sane data formats like JSON, YAML, or actual objects.
+In addition to having no means to respresent anything except strings and
+hierarchies, XML makes no distinction between what we would call objects and
+arrays. We want objects with properties. That means, first of all, sacrificing
+sequence (usually). If a node has mixed content like text-element-text, you’re
+not going to see that sequence preserved. Well, not unless you use a custom
+`transform` function anyway (see below).
+
+Way back, the way I would have done this would have been to use a module like
+xml2json first and then just manipulate and pluck data from the result to build
+what I really wanted. That does work, but I found that for me, dealing with
+sometimes very large and ugly documents, it led me towards very imperative,
+convoluted code. The options system in hardcore is meant to solve that problem
+by providing a declarative way to enact such transformations.
+
+ - `asBool`: Filtered transform. The text content of a matched node will be cast
+   as a Boolean. This cast will take into account common alternate
+   representations like yes/no, 1/0, y/n. Default: undefined.
+ - `asDate`: Filtered transform. The text content of a matched node will be cast
+   as a Date. Default: undefined.
+ - `asNumber`: Filtered transform. The text content of a matched node will be
+   cast as a Number. Default: undefined.
+ - `asString`: Filtered transform. The text content of a matched node will be
+   ... text. (The point here is that the "asX" transforms will make the *value*
+   of the node the result of the cast text, thus `{ name: 'text' }` instead of
+   `{ name: { $text: 'text' } }`. Default: `true`.
+ - `attrPrefix`: String. If set, attributes will become properties of their
+   parent Element directly. May be an empty string if you’re not concerned with
+   collision -- this is default.
+ - `attrProperty`: String. If set, attributes will be grouped in a single object
+   that is a property of the parent Element; this will be the name of that
+   property. Default: undefined. `attrPrefix` and `attrProperty` are mutually
+   exclusive options.
+ - `collapse`: Filtered transform. Matching nodes will be ignored, but their
+   children and attributes, if applicable, will not be -- instead, they will be
+   inherited by the parent node. This is very useful when transforming XML,
+   which is often aggressively and pointlessly hierarchical. Default: undefined.
+ - `ignore`: Filtered transform. Matching nodes will be ignored, as will any of
+   their descendents. Default: `[ Comment, Doctype, ProcessingInstruction ]`.
+ - `plural`: Filtered transform. Matching nodes will be treated as arrays. This
+   bit can be a little confusing. More on this below. Default: `true`.
+ - `rename`: For named nodes, you can supply a mapping of original names to new
+   names. This can be an Object or a Map; in the latter case, the keys can also
+   be regex patterns. It can also be a function, which takes a name and returns
+   a name.
+ - `renamer`: A function that takes a name and returns a name. There are several
+   built-in renamer functions available at `hardcore.renamers`. The default
+   value is `hardcore.renamers.camel` -- it will convert names to conventional
+   JS camelcase. Names given in `rename` supercede this setting.
+ - `textProperty`: String. Like `attrProperty`, but for text. I suspect most of
+   the time we want text to be handled by `asString`, but even with `asString`
+   set to `true`, it is possible to have a node with mixed content, or text and
+   attributes, which will necessitate assigning text to a property. Default:
+   '$text'.
+ - `transform`: Function to apply custom transformations. It can also be a Map.
+   The workings of `transform` are described in detail below.
+ - `withNS`: Boolean. Whether to include or omit namespace prefixes. Note that
+   this setting will influence how names are matched in filtered transforms,
+   too. Note, default is `false`, unlike `toXML`.
+
+#### Filtered Transforms
+
+The options called ‘filtered transforms’ above take a common action on any nodes
+that pass provided predicate tests. It will accept a single value or an array of
+values. Predicates can be standard predicate functions (they receive the node
+and should return true or false), a string (will match named elements), a regex
+pattern (same), or any of the node constructors (Element, Comment, etc). A
+single value of `true` will cause the transformation to apply to all nodes.
+
+#### Plurality
+
+The `plural` predicate(s) are used to determine whether a node should be
+translated to an array. You may find it odd that by default, all nodes are. This
+has to do with what might be the single most important way XML sucks. In the
+absence of a priori knowledge, the only safe assumption that will always yield a
+consistent result is that *all nodes* are arrays. Bear with me...
+
+```xml
+<pizza>
+  <topping>anchovy</topping>
+  <slices>8</slices>
+</pizza>`
+```
+
+Here, if we set `plural` to match nothing, we’d get:
+
+```js
+{ pizza: { topping: 'anchovy', slices: '8' } }
+```
+
+That actually makes sense. But then, what if sometimes there are more toppings?
+
+```xml
+<pizza>
+  <topping>anchovy</topping>
+  <topping>drano</topping>
+  <slices>8</slices>
+</pizza>
+```
+
+Now we’ll get:
+
+```js
+{ pizza: { topping: [ 'anchovy', 'drano' ] slices: '8' } }
+```
+
+The shitty bit here is that now we have a situation where you don’t know whether
+`doc.pizza.topping` is a string or an array of strings. You’d need to put type
+checking guards around everything. So what happens if we say *everything* is
+plural, then?
+
+```js
+{ pizza: [ { topping: [ 'anchovy', 'drano' ], slices: [ '8' ] } ] }
+```
+
+This is obviously not what anyone wants -- but it is safe. Anyway, this is why
+it’s up to you to make these decisions: `toObject` is just awaiting your orders.
+A sensible options profile for that document might look like this:
+
+```js
+const opts = {
+  plural: [ 'topping' ],
+  rename: { topping: 'toppings' },
+  asNumber: [ 'slices' ]
+};
+
+// Now you’ll get consistent results for both examples:
+{ pizza: { toppings: [ 'anchovy' ], slices: 8 } }
+{ pizza: { toppings: [ 'anchovy', 'drano' ], slices: 8 } }
+```
+
+The `plural` transform is not exclusive of other transforms. A node can be both
+plural and a number, for example.
+
+#### Custom Transform
+
+The `transform` option lets you perform custom transformation, anything goes.
+It can be a single function or it can be a Map of predicate keys (which are just
+like the predicates / predicate arrays described above) with functions as
+values.
+
+An important note before we go on
+
+
+
+There are a number of options that accept either one value or an array of
+values, where a value is a string, a regex pattern, a predicate function, or any
+of the node constructors (Element, Comment, etc). These act as filters -- for
+strings and regex patterns, against named nodes; functions receive the node and
+return true or false; and constructors are matched against instance type. A
+single value of `true` is also allowed; then the transform will apply to every
+node (which only makes sense with a few of them). We’ll call these ‘filtered
+transforms’ below.
+
+### `toJSON()` and `toYAML()`
+
+The options for these include all of the options for `toObject`, plus all of
+the options for `toXML`, with these differences:
+
+ - `asComment`: An extra filtered transform. Nodes matching will be included in
+   the output as comments. Note that JSON technically does not allow comments,
+   though many implementations permit them anyway. Default for YAML:
+   `[ Comment ]`. Default for JSON: `undefined`.
+ - `quote`: This is not applicable to `toJSON`. For `toYAML`, the value can be
+   a single quote, a double quote, an empty string, or one of the YAML string
+   block prefixes. If undefined, but `pretty` is true, then no-quotes will be
+   favored, but when necessary, or when the string is long, '>-' will be used.
+
+### Renamers
+
+You can supply a custom renamer (or null), but some of the more obvious ones are
+made available out of the gate.
+
+#### `hardcore.renamers.camel`
+
+Standard JS-style camelcase. Common acronyms are handled intelligently (e.g.
+'ID' => 'id', but 'CatId' => 'catID').
+
+#### `hardcore.renamers.lower`
+
+Entirely to lowercase.
+
+#### `hardcore.renamers.snake`
+
+Snake case -- lowercase with underscores between words. Good for when your
+output is ultimately going to be consumed in a context where this is
+conventional, like Python or PHP -- when in rome, etc.
 
 ## XML
 
