@@ -4,7 +4,7 @@ module.exports = require('gobble')('src').transform('babel', {
 	optional: [
 		'es7.asyncFunctions',
 		'es7.decorators',
-		'validation.undeclaredVariableCheck'
+		'es7.functionBind'
 	],
 	sourceMaps: true
 });

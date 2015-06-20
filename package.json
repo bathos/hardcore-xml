@@ -2,7 +2,7 @@
   "name": "hardcore-xml",
   "version": "0.0.1",
   "description": "xml parser as writable stream",
-  "main": "lib/node_modules/parser.js",
+  "main": "lib/index.js",
   "scripts": {
     "build": "gobble build lib --force",
     "prepublish": "npm test",
@@ -14,13 +14,15 @@
   },
   "keywords": [
     "xml",
+    "html",
+    "parse",
     "parser",
     "stream",
     "json",
     "convert"
   ],
   "author": "Darien Maillet Valentine",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/bathos/hardcore-xml/issues"
   },
@@ -33,6 +35,7 @@
     "tape": "^4.0.0"
   },
   "dependencies": {
-    "babel": "^5.4.7"
+    "babel": "^5.5.8",
+    "source-map-support": "^0.3.1"
   }
 }
