@@ -26,6 +26,10 @@ function parseTest(t, opts) {
 	var expected   = opts.exp || xml;
 	var shouldFail = opts.shouldFail;
 
+	parser.on('wat', function(err) {
+		t.comment('(wat: ' + err + ')');
+	});
+
 	parser.on('error', function(err) {
 		if (shouldFail)
 			t.pass(msg);

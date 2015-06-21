@@ -29,7 +29,7 @@
   "homepage": "https://github.com/bathos/hardcore-xml#readme",
   "devDependencies": {
     "gobble": "^0.10.2",
-    "gobble-babel": "^5.1.0",
+    "gobble-babel": "^5.5.8",
     "gobble-cli": "^0.4.2",
     "tap-spec": "^4.0.0",
     "tape": "^4.0.0"

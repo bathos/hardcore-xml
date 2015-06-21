@@ -30,27 +30,31 @@ XML and HTML parsing, editing, construction and transformation library for node.
       - [`hardcore.renamers.snake`](#hardcorerenamerssnake)
 - [XML](#xml)
    - [Regular Nodes](#regular-nodes)
-      - [`hardcore.xml.Document`](#hardcorexmldocument)
-      - [`hardcore.xml.Element`](#hardcorexmlelement)
-      - [`hardcore.xml.Attribute`](#hardcorexmlattribute)
-      - [`hardcore.xml.Comment`](#hardcorexmlcomment)
-      - [`hardcore.xml.Text`](#hardcorexmltext)
-      - [`hardcore.xml.ProcessingInstruction`](#hardcorexmlprocessinginstruction)
-      - [`hardcore.xml.CDATASection`](#hardcorexmlcdatasection)
-      - [Bonus node: `hardcore.xml.DocumentFragment`](#bonus-node-hardcorexmldocumentfragment)
+      - [`hardcore.nodes.Document`](#hardcorenodesdocument)
+      - [`hardcore.nodes.Element`](#hardcorenodeselement)
+      - [`hardcore.nodes.Attribute`](#hardcorenodesattribute)
+      - [`hardcore.nodes.Comment`](#hardcorenodescomment)
+      - [`hardcore.nodes.Text`](#hardcorenodestext)
+      - [`hardcore.nodes.ProcessingInstruction`](#hardcorenodesprocessinginstruction)
+      - [`hardcore.nodes.CDATASection`](#hardcorenodescdatasection)
+      - [Bonus node: `hardcore.nodes.DocumentFragment`](#bonus-node-hardcorenodesdocumentfragment)
    - [DTD Nodes](#dtd-nodes)
-      - [`hardcore.xml.Doctype`](#hardcorexmldoctype)
-      - [`hardcore.xml.DoctypeExternal`](#hardcorexmldoctypeexternal)
-      - [`hardcore.xml.ConditionalSection`](#hardcorexmlconditionalsection)
-      - [`hardcore.xml.ParameterReference`](#hardcorexmlparameterreference)
-      - [`hardcore.xml.ElementDeclaration`](#hardcorexmlelementdeclaration)
-      - [`hardcore.xml.ChildElementGroup`](#hardcorexmlchildelementgroup)
-      - [`hardcore.xml.ChildElementName`](#hardcorexmlchildelementname)
-      - [`hardcore.xml.AttListDeclaration`](#hardcorexmlattlistdeclaration)
-      - [`hardcore.xml.AttributeDefinition`](#hardcorexmlattributedefinition)
-      - [`hardcore.xml.EntityDeclaration`](#hardcorexmlentitydeclaration)
-      - [`hardcore.xml.NotationDeclaration`](#hardcorexmlnotationdeclaration)
+      - [`hardcore.nodes.Doctype`](#hardcorenodesdoctype)
+      - [`hardcore.nodes.DoctypeExternal`](#hardcorenodesdoctypeexternal)
+      - [`hardcore.nodes.ConditionalSection`](#hardcorenodesconditionalsection)
+      - [`hardcore.nodes.ParameterReference`](#hardcorenodesparameterreference)
+      - [`hardcore.nodes.ElementDeclaration`](#hardcorenodeselementdeclaration)
+      - [`hardcore.nodes.ChildElementGroup`](#hardcorenodeschildelementgroup)
+      - [`hardcore.nodes.ChildElementName`](#hardcorenodeschildelementname)
+      - [`hardcore.nodes.AttListDeclaration`](#hardcorenodesattlistdeclaration)
+      - [`hardcore.nodes.AttributeDefinition`](#hardcorenodesattributedefinition)
+      - [`hardcore.nodes.EntityDeclaration`](#hardcorenodesentitydeclaration)
+      - [`hardcore.nodes.NotationDeclaration`](#hardcorenodesnotationdeclaration)
 - [HTML](#html-1)
+   - [HTMLElement](#htmlelement)
+   - [HTMLElementASC](#htmlelementasc)
+   - [HTMLElementPre](#htmlelementpre)
+   - [HTMLAttribute](#htmlattribute)
 
 <!-- /MarkdownTOC -->
 
@@ -67,16 +71,16 @@ It exposes:
 
 Here’s what you can do with it:
 
- - Strict or forgiving parsing of XML, including DTDs -- and also HTML.
- - Document validation, I suppose, as a side effect of parsing in strict mode.
- - Edit the result. Accessors can take care of entity escapes when needed.
+ - Parse XML in strict or forgiving modes, including DTDs.
+ - Parse HTML.
+ - Edit the result. Accessors will take care of entity escapes when needed.
+ - Convert back (perhaps after modification) to prettified or condensed XML.
  - Transform the result into vanilla objects or json, with fine control over
    exactly what the end result will look like: you can specify which nodes to
    ignore, which to consider ‘plural’, and you can map names, transform or
    coerce values selectively, etc.
- - Convert back (perhaps after modification) to prettified or condensed XML.
  - What the hell, why not throw in `toYAML` too.
- - Construct valid XML or HTML documents node-by-node using the same building
+ - Construct XML or HTML documents node-by-node using the same building
    blocks the parser uses.
 
 ### Caveats
@@ -97,11 +101,18 @@ not to render it for a viewing human or process its actual data content.
 
 tl;dr the validation is mainly about grammar and doesn’t actually use DTDs
 
-Finally note that using this library means coming in close contact with XML.
-All usual safety precautions apply: only use in a well-ventilated area and make
-sure a friend knows where you are. Have them check in on you occasionally.
-Hardcore Enterprises cannot be held responsible for emotional or physical harm
-caused by interaction with XML.
+There’s a very important caveat regarding HTML. HTML support is secondary in
+this library, and not as rigorous. While ‘normal’ stuff will be handled fine,
+and it can even take care of some of the weirder allowances like legal omission
+of certain open and close tags, there are definitely obscure cases that could
+cause parsing problems, and there are very few sanity checks for validity.
+
+Finally note that using this library may mean coming in close contact with XML.
+All usual safety precautions apply: use in a well-ventilated area and make sure
+a friend knows where you are. Have them check in on you occasionally. Meet in a
+public space. Do not operate heavy machinery, do not shake the baby. Hardcore
+Enterprises cannot be held responsible for emotional or physical harm caused by
+interaction with XML.
 
 ## Parsing
 
@@ -165,38 +176,54 @@ except when `html` is true.
 Set to `false` to cause whitespace-only text nodes to appear in the resulting
 document. Defaults to `true`. Note that whitespace that would not be text nodes
 -- that is, whitespace occuring outside the root element, or inside tags, etc --
-is never preserved, standards be damned.
+is never preserved, standards be damned. Always `true` if `html` is `true`, and
+effectively `true` by other means if `normalize` is true.
 
 #### `normalize`
 
 Set to `true` to treat all whitespace sequences in text, comments, and CDATA as
 single spaces (u0020). When parsing HTML, an exception is made for the `<pre>`
-element even when this is on. Defaults to `false`.
+element even when this is on. Defaults to `false` unless `html` is `true`.
+
+This option will also cause empty CDATA, comment and text nodes to be dropped.
+
+Note that this option does not preclude later output of XML with newlines for
+readability; the `pretty` option of `toXML()` provides a consistent way to take
+care of that.
 
 #### `html`
 
 Set to `true` to parse HTML. Although well-formed XHTML will be valid as XML,
-HTML proper isn’t actually a subset of XML and will often fail without this mode
-set to true because of stuff like self-closing tags without a self-closing
-sequence (e.g. `<input>` instead of `<input/>`) being valid. Which is stupid
-btw.
+other HTML versions are not necessarily valid as XML.
 
 Even if you are dealing with HTML that would be valid as XML, though,
 you’ll want to use this because there are benefits after parsing; the resulting
-document will have typed, not anonymous, elements, with unique attributes.
+document will take advantage of additional knowledge about HTML to give you a
+better result, including nodes that have shorthand for accessing common
+attributes like 'id'.
 
 Note that when HTML is true, `strict` is false by default. The `strict` setting
 refers to XML, so unless you know the HTML is XHTML or HTML 5 written to be XML
-compliant, it won’t make sense to have this on.
+compliant, it won’t make sense to have this on. In `strict` mode, valid HTML
+constructs like self-closing elements without '/' (e.g. `<input>`) will be
+errors, as will attributes without quotes or values.
+
+If you parse HTML and then use `toXML()`, you will get back a result that is
+valid as XML.
+
+The HTML parsing is pretty dumb. It doesn’t know anything more about HTML than
+it needs to to compensate for the ways in which it differs from XML. Although it
+knows ‘about’ a handful of elements, it doesn’t know about things like what may
+or may not appear in a ‘p’ tag.
 
 #### `target`
 
 This lets you explicitly specify the type of result you expect. Valid values are
 "Document", "DoctypeExternal", "Element" or "DocumentFragment". By default, the
 parser will automatically detect whether the body being parsed is a Document or
-a DoctypeExternal, but you can only get an Element or DocumentFragment back by
-asking for it. Note, these values are not case sensitive, and if you prefer, you
-can pass in the corresponding constructor instead.
+a DoctypeExternal, but *you can only get an Element or DocumentFragment back by
+asking for it.* Note, these values are not case sensitive, and if you prefer,
+you can also pass in the corresponding constructor instead.
 
 If you do specify a target and the parsed body is not a valid example of that
 target, this will constitute an error.
@@ -494,7 +521,7 @@ conventional, like Python or PHP -- when in rome, etc.
 
 ## XML
 
-All of the XML node constructors are exposed at `hardcore.xml`. You can use them
+All of the XML node constructors are exposed at `hardcore.nodes`. You can use them
 to construct documents (or document snippets) ‘by hand’ or in the course of
 modifying a previously parsed document (e.g. inserting some new elements).
 
@@ -504,7 +531,7 @@ perform many of the same adjustments that are performed in permissive parsing
 mode. For example:
 
 ```js
-const elem = new hardcore.xml.Element({ name: 'pizza' });
+const elem = new hardcore.nodes.Element({ name: 'pizza' });
 
 elem.setAttribute({ key: 'toppings', value: 'anchovies & olives' });
 
@@ -515,7 +542,7 @@ That also shows an example of one of a convenience method on `Element` -- its
 `setAttribute` method is shorthand here for:
 
 ```js
-elem.attributes.push(new hardcore.xml.Attribute({ /* ... */ }));
+elem.attributes.push(new hardcore.nodes.Attribute({ /* ... */ }));
 ```
 
 All of the node constructors that take arguments take them as an options-type
@@ -588,13 +615,14 @@ And nodes which have the `children` property also all have:
  - `descendents()`
  - `findNearestDescendent()`
 
-So onto the node types. From here on I’m going to omit the `hardcore.xml` prefix
-in examples and assume that if you’re working with these a lot, you’ve bound
-the ones you’re interested in to local variables.
+So onto the node types. From here on I’m going to omit the `hardcore.nodes`
+prefix in examples and assume that if you’re working with these a lot, you’ve
+bound the ones you’re interested in to local variables (for most use cases, this
+will just be `Element` and either `Document` or `DocumentFragment`).
 
 ### Regular Nodes
 
-#### `hardcore.xml.Document`
+#### `hardcore.nodes.Document`
 
 Normally Document is our ‘target’ -- that is, when parsing concludes, the result
 ought to be a valid Document (or a DoctypeExternal, but just ignore that).
@@ -638,7 +666,7 @@ append them to `children` if one does not already exist, respectively.
 document.root = new Element({ name: 'hello' });
 ```
 
-#### `hardcore.xml.Element`
+#### `hardcore.nodes.Element`
 
 Element is the most important node; it’s a "tag".
 
@@ -654,6 +682,12 @@ That’s a "hello" element with two children, a Text node and another Element.
 
  - `namespace`: Optional.
  - `name`: The name of the element, required.
+ - `text`: Optional string. A shortcut to add a single text node to the new
+   Element.
+ - `attributes`: Optional. Like `text`, this option lets you set attributes at
+   instantiation time. It can either be an ElementAttributes object or a simple
+   object hash like `{ id: 'MyElement' }`. In the latter form, namespaces will
+   not be recognized.
 
 Like Document, Element has an array-ish `children` property. It has a second
 array-ish property, too: `attributes`. The children can be CDATASection,
@@ -671,19 +705,27 @@ representations when using the `text` property.
 (All nodes that have a `namespace` property also have the `fullName` getter. I
 won’t mention it from here on.)
 
-Element has two convenience methods for dealing with attributes:
+Element has three convenience methods for dealing with attributes:
 
+ - `getAttribute({ namespace?, key })`
  - `setAttribute({ namespace?, key, value })`
  - `removeAttribute({ namespace?, key })`
 
 In the case of `setAttribute`, if a matching attribute already exists its value
 will be updated; otherwise, it will be created.
 
-#### `hardcore.xml.Attribute`
+Element has another convenience method for text content, `addText(str)`. This
+will append a child text node.
+
+#### `hardcore.nodes.Attribute`
 
 An attribute is a key-value pair (with optional namespace). The value can
 include entity references like '&amp;'. In XML, unlike HTML, a value is always
 required, but it can be an empty string.
+
+When creating a document from scratch, you probably won’t need to use this
+constructor directly -- the `setAttribute()` method of Element is more
+convenient.
 
 ##### Argument Object
 
@@ -693,7 +735,7 @@ required, but it can be an empty string.
 
 Properties are the same.
 
-#### `hardcore.xml.Comment`
+#### `hardcore.nodes.Comment`
 
 A comment can contain pretty much any text except the sequence '--'. It also
 can’t end with '-'. If you set a value with these sequences they’ll be corrected
@@ -705,7 +747,7 @@ to '- -' and '- ' respectively.
 
 The only property is `content`.
 
-#### `hardcore.xml.Text`
+#### `hardcore.nodes.Text`
 
 Text nodes require '<'' and ']]>' to be escaped. This will be done automatically
 if needed.
@@ -718,7 +760,7 @@ The only property is `content`. Remember that for nodes that only take a single
 argument, it’s okay to just supply the value instead of an object, so
 `new Text('some text')` is understood.
 
-#### `hardcore.xml.ProcessingInstruction`
+#### `hardcore.nodes.ProcessingInstruction`
 
 A processing instruction is a directive that targets a specific interepreting
 agent, or something like that. They’re the ones that begin with '<?', except for
@@ -731,7 +773,7 @@ the xml declaration.
 
 Note that the instruction cannot contain the sequence '?>'.
 
-#### `hardcore.xml.CDATASection`
+#### `hardcore.nodes.CDATASection`
 
 A CDATA section is a type of ‘marked section’ that contains text that doesn’t
 need to use entity references to encode ampersands or less-than signs. But it
@@ -748,7 +790,7 @@ appear (i.e., inside Elements).
 
 The only property is `content`.
 
-#### Bonus node: `hardcore.xml.DocumentFragment`
+#### Bonus node: `hardcore.nodes.DocumentFragment`
 
 This is actually the same as the ‘children’ part of an Element. It’s exposed
 because it could be convenient, and many other XML tools implement a similar
@@ -764,7 +806,7 @@ fragment.push(new Comment('whatevs'));
 
 Turn back now! It’s not too late! This section is haunted! Woo~ooo~ooo!
 
-#### `hardcore.xml.Doctype`
+#### `hardcore.nodes.Doctype`
 
 The Doctype can occur in a Document somewhere before the root element begins.
 Usually this is really simple and benign and looks like this:
@@ -790,7 +832,7 @@ In addition to the above, there is a `children` property. This works like the
 sequence of Comment, ParameterReference, ProcessingInstruction, or any of the
 XxxDeclaration elements described below.
 
-#### `hardcore.xml.DoctypeExternal`
+#### `hardcore.nodes.DoctypeExternal`
 
 This is actually a special ‘target’ like `Document`. That is, xml parsing can
 result in either a `Document` or a `DoctypeExternal`. An external doctype is
@@ -811,7 +853,7 @@ Properties are `version`, `encoding` and `children`. The `children` object can
 contain the same things as `Doctype`, but with the addition of
 `ConditionalSection`.
 
-#### `hardcore.xml.ConditionalSection`
+#### `hardcore.nodes.ConditionalSection`
 
 A conditional section is a weird thing that can only occur in external DTDs.
 It’s a ‘marked section’ (like CDATA) whose keyword may be either IGNORE or
@@ -844,7 +886,7 @@ Oh my god, why am I explaining this. No one will ever use this.
 Properties are `keyword` and `children`. The children object is the same as the
 one used by `DoctypeExternal`, and it may be empty.
 
-#### `hardcore.xml.ParameterReference`
+#### `hardcore.nodes.ParameterReference`
 
 A parameter reference looks like an entity reference but with ‘%’ instead of
 ‘&’. Defined with EntityDeclarations, these can appear in DTDs on their own.
@@ -864,7 +906,7 @@ the constructor for that).
 
 The only property is `name`.
 
-#### `hardcore.xml.ElementDeclaration`
+#### `hardcore.nodes.ElementDeclaration`
 
 Defines an element, except its attributes (use AttListDeclaration for that). The
 definition describes what kind of children may appear inside, and this is sort
@@ -895,7 +937,7 @@ special version of ChildElementGroup for the root. Because of the complexity of
 the requirements, it’s possible to put an ElementDeclaration into an invalid
 state, so be careful.
 
-#### `hardcore.xml.ChildElementGroup`
+#### `hardcore.nodes.ChildElementGroup`
 
 ChildElementGroup is a parenthesized list of one or more ChildElementNames or
 additional ChildElementGroups. The `contentSpec` property of an
@@ -923,7 +965,7 @@ is "CHOICE" and the `quantifier` is "*".
  - `type`: For non-root ChildElementGroups, the type may only be "CHOICE" or
    "SEQUENCE". For the root, see the description at ElementDeclaration.
 
-#### `hardcore.xml.ChildElementName`
+#### `hardcore.nodes.ChildElementName`
 
 In the example below, "kitten" is a ChildElementName. The declaration’s type
 here is "SEQUENCE" -- that’s why the elements are comma seperated. While
@@ -948,7 +990,7 @@ ChildElementName as opposed to the group.
 
 Properties are the same as the arguments.
 
-#### `hardcore.xml.AttListDeclaration`
+#### `hardcore.nodes.AttListDeclaration`
 
 An AttListDeclaration describes the attributes to associate with an element.
 Logically, these might as easily have been part of the ElementDeclaration since
@@ -975,7 +1017,7 @@ Instance properties are `defs` (an AttributeDefinitions object) plus those
 above. AttributeDefinitions is like `children`; it has array methods. It is
 allowed to be empty, and its members must be AttributeDefinitions.
 
-#### `hardcore.xml.AttributeDefinition`
+#### `hardcore.nodes.AttributeDefinition`
 
 A single AttributeDefinition is a member of the `defs` described above. The
 example given for AttListDeclaration will suffice, too. 
@@ -1016,7 +1058,7 @@ attribute is at all. If the value is '#IMPLIED' it means ‘attribute is not
 required’, which is weird since that’s not in any sense what the word implied
 means. '#REQUIRED' is what it sounds like, though.
 
-#### `hardcore.xml.EntityDeclaration`
+#### `hardcore.nodes.EntityDeclaration`
 
 Defines a regular entity ('&something;') or a parameter entity ('%something;').
 
@@ -1042,7 +1084,7 @@ It could be that simple, anyway, but this is XML.
 Note that `value` is mutually exclusive with `systemID`, and that `publicID`
 demands that there be a `systemID`.
 
-#### `hardcore.xml.NotationDeclaration`
+#### `hardcore.nodes.NotationDeclaration`
 
 Go ahead, declare a notation with this handy helper!
 
@@ -1063,3 +1105,83 @@ Either `publicID` or `systemID` is required, or both. Unlike other cases with
 these properties, you can have `publicID` on its own here.
 
 ## HTML
+
+There are a handful of special -- but still generic -- HTML element nodes.
+
+### HTMLElement
+
+The generic HTMLElement node is just an Element node augmented with convenience
+accessors for getting and setting common attributes. Element attributes can also
+be get and set using the `getAttribute` and `setAttributes` from Element, which
+is what these accessors are sugar for.
+
+ - alt
+ - class
+ - dir
+ - height
+ - href
+ - id
+ - lang
+ - placeholder
+ - src
+ - style
+ - title
+ - translate
+ - type
+ - value
+ - width
+
+There are three additional methods to make `class` nice:
+
+ - `addClass(name)`
+ - `hasClass(name)`
+ - `removeClass(name)`
+
+To give an idea of how one might use hardcore with HTML, let’s say you want to
+remove a particular class from every ‘p’ element. You might do it like this:
+
+```js
+for (const node of doc.descendents) {
+   if (elem.name == 'p')
+      elem.removeClass('oldClass');
+}
+```
+
+And while there’s no CSS selector tool in here, you can do a lot of the same
+sort of stuff programmatically without much fuss. Maybe you only want to remove
+‘oldClass’ when the paragraph is a descendent of a div?
+
+```js
+for (const node of doc.descendents) {
+   if (elem.name == 'p' && elem.parents.some(elem => elem.name === 'div'))
+      elem.removeClass('oldClass');
+}
+```
+
+### HTMLElementASC
+
+This variation on HTMLElement is for elements that are ‘always self closing.’
+Elements fitting this profile cannot have child content, and, during parsing,
+they will be recognized as self-closing even if they omit the closing slash.
+It’s needed because such tags would produce invalid XML otherwise. It also
+influences `toXML()` rendering because other empty HTMLElements will always
+use the ‘long-form’ syntax (`<script></script>`).
+
+An example of HTMLElementASC is `<input>`.
+
+### HTMLElementPre
+
+This class is used for `<pre>`, `<script>` and `<style>`. It causes text node
+content whitespace to be preserved as-is regardless of parser settings
+(`normalize` is ignored) and `toXML()` options (`pretty` is ignored and
+indentation is not applied). An HTMLElementPre element’s effect extends to all
+of its children, if applicable.
+
+Both the HTMLElementASC and HTMLElementPre constructors have a `nodes` property,
+which is a hash of element names which fall in these categories. You could edit
+these objects to change that behavior.
+
+### HTMLAttribute
+
+The standard XML Attribute is not used, though it will be converted
+automatically if you set one. The difference concerns case-sensitivity.

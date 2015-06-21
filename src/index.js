@@ -9,7 +9,8 @@ sms.install();
 // IMPORTS /////////////////////////////////////////////////////////////////////
 
 import * as errors from 'errors';
-import * as XML from 'nodes';
+import * as nodes  from 'nodes';
+
 import Parser from 'parser';
 
 // PARSE AS METHOD /////////////////////////////////////////////////////////////
@@ -33,4 +34,4 @@ const parse = (str, opts, cb) => new Promise((resolve, reject) => {
 
 // EXPORT //////////////////////////////////////////////////////////////////////
 
-export default { Parser, parse, XML, /*HTML, renamers,*/ errors };
+export default { Parser, parse, nodes, /* renamers,*/ errors };
