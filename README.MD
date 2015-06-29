@@ -516,7 +516,7 @@ optional behaviors.
  - `before`: This optional function returns a value to represent the node.
  - `after`: This optional function can perform a final transformation after
    a node’s children have been handled.
- - `coerce`: This option is shorthand for the most common uses of `first`.
+ - `coerce`: This option is shorthand for the most common uses of `before`.
  - `ignore`: If true, the node (and any children it may have) will be discarded.
  - `collapse`: If true, the node’s children will be ‘inherited’ by its parent
    (even if `ignore` was true). If the value is a string, the node will be
@@ -548,7 +548,7 @@ example document:
 Initially, `toObject` walks the tree starting from the node you called the
 method on, working its way down each path from top to bottom, left to right. A
 representation of each node is created; by default, these will always be objects
-or strings, but you can control the ‘base’ value using `first`. In this phase,
+or strings, but you can control the ‘base’ value using `before`. In this phase,
 the `ignore` and `collapse` options are also applied and the node’s new name, if
 any, will be determined.
 
@@ -633,12 +633,12 @@ the `opts.renamer` function if it was supplied.
 
 ##### `before` and `coerce`
 
-The `first` function receives the original Node and whatever *would* be its
+The `before` function receives the original Node and whatever *would* be its
 generic representation (baseVal). It returns a value which will represent this
 node in the result object. It’s fine to just mutate the baseVal and return that.
 
 ```js
-function first(node, baseVal) { /* ... */ }
+function before(node, baseVal) { /* ... */ }
 ```
 
 The baseVal of a node is always an object (e.g. Element) or a string (e.g.
@@ -654,7 +654,7 @@ properties already attached. For example, if you choose to include processing
 instruction nodes, the baseVal will be an object with the properties
 `$target` and `$instruction`.
 
-The `coerce` option is shorthand for certain common `first`s related mainly to
+The `coerce` option is shorthand for certain common `before`s related mainly to
 Element and Attribute nodes. Valid values for `coerce` are:
 
  - Boolean
@@ -662,10 +662,10 @@ Element and Attribute nodes. Valid values for `coerce` are:
  - Number
  - String
 
-Even though `coerce` is shorthand for pre-defined `first` functions, you can use
-both. If both are defined, the coercion will occur first; therefore `first` will
-receive the result of the coercion as its second argument. This is quite useful
-when using `coerce: String`.
+Even though `coerce` is shorthand for pre-defined `before` functions, you can
+use both. If both are defined, the coercion will occur first; therefore `before`
+will receive the result of the coercion as its second argument. This is quite
+useful when using `coerce: String`.
 
 Depending on the node type, coerce behaves a bit differently. For nodes with a
 string baseVal, like Attribute, the string value will simply be cast to the new
