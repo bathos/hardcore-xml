@@ -1,3 +1,6 @@
+> WORK IN PROGRESS. This isn’t done yet -- I just needed to get it up here at
+this point so that I could access the codebase from multiple comps.
+
 # hardcore
 
 XML and HTML parsing, editing, construction and transformation library for node.
