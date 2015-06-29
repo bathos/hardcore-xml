@@ -6,6 +6,8 @@ var Writable = require('stream').Writable;
 
 var Parser = hardcore.Parser;
 
+// MAIN THING //////////////////////////////////////////////////////////////////
+
 tape('Parser Instantiation', function(t) {
 	function invoke() { Parser(); }
 	function instantiate() { return new Parser(); }
@@ -27,7 +29,7 @@ function parseTest(t, opts) {
 	var shouldFail = opts.shouldFail;
 
 	parser.on('wat', function(err) {
-		t.comment('(wat: ' + err + ')');
+		//t.comment('(wat: ' + err + ')');
 	});
 
 	parser.on('error', function(err) {
@@ -69,5 +71,70 @@ tape('Parsing and String Output', function(t) {
 		setTimeout(function() { parseTest(t, opts); }, time);
 
 		time += 20;
+	});
+});
+
+// ALTERNATIVE PARSING /////////////////////////////////////////////////////////
+
+tape('Parse Method', function(t) {
+	t.plan(2);
+
+	var xml = '<a/>';
+
+	hardcore.parse(xml, function(err, doc) {
+		t.equal(doc && doc.toString(), xml, 'parse with callback');
+	});
+
+	hardcore.parse(xml).then(function (doc) {
+		t.equal(doc && doc.toString(), xml, 'parse with promise');
+	});
+});
+
+// RENAMERS ////////////////////////////////////////////////////////////////////
+
+tape('Built-in Renamers', function(t) {
+
+	var types =
+		[ 'camel', 'lower', 'pascal', 'snake' ];
+
+	var testNames = [
+		[ 'hello', 'hello', 'hello', 'Hello', 'hello' ],
+		[ 'ns:hello', 'nsHello', 'nshello', 'NsHello', 'ns_hello' ],
+		[ 'ΒΆΘΟΣ', 'βάθος', 'βάθος', 'Βάθος', 'βάθος' ],
+		[ 'egg 1.2', 'egg1_2', 'egg1_2', 'Egg1_2', 'egg_1_2' ],
+		[ 'ImageUrl', 'imageURL', 'imageurl', 'ImageURL', 'image_url' ],
+		[ 'حبيبي حبيبي', 'حبيبيحبيبي', 'حبيبيحبيبي', 'حبيبيحبيبي', 'حبيبي_حبيبي' ]
+	];
+
+	t.plan(testNames.length * 4);
+
+	testNames.forEach(function(tn) {
+		var orig = tn[0];
+
+		tn.slice(1).forEach(function(expected, index) {
+			var type = types[index];
+			var msg = type + ' (' + orig + ' => ' + expected + ')';
+
+			t.equal(hardcore.renamers[type](orig), expected, msg );
+		})
+	});
+});
+
+// CONVERSION //////////////////////////////////////////////////////////////////
+
+function convertTest(t, opts) {
+	hardcore.parse(opts.xml).then(function(doc) {
+		t.deepEqual(doc.toObject(opts), opts.exp, opts.msg);
+	}).catch(function(err) {
+		t.fail(err.msg + ' ' + opts.msg);
+		t.comment(err.stack);
+	});
+}
+
+tape('Conversion to Object', function(t) {
+	t.plan(testXML.conversionTests.length);
+
+	testXML.conversionTests.forEach(function(opts) {
+		convertTest(t, opts);
 	});
 });

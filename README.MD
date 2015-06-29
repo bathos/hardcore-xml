@@ -2,7 +2,7 @@
 
 XML and HTML parsing, editing, construction and transformation library for node.
 
-<!-- MarkdownTOC autolink=true bracket=round depth=4 -->
+<!-- MarkdownTOC autolink=true bracket=round depth=5 -->
 
 - [Purpose](#purpose)
    - [Caveats](#caveats)
@@ -20,9 +20,19 @@ XML and HTML parsing, editing, construction and transformation library for node.
 - [Transformation](#transformation)
    - [`toXML()`](#toxml)
    - [`toObject()`](#toobject)
-      - [Filtered Transforms](#filtered-transforms)
-      - [Plurality](#plurality)
-      - [Custom Transform](#custom-transform)
+      - [Premise](#premise)
+      - [Main Options](#main-options)
+         - [Main Renamer](#main-renamer)
+      - [Default Rules](#default-rules)
+      - [Custom Rules](#custom-rules)
+         - [`match`](#match)
+         - [`rename`](#rename)
+         - [`before` and `coerce`](#before-and-coerce)
+         - [`after` and `afterPlural`](#after-and-afterplural)
+         - [`plural`](#plural)
+         - [`asArray`](#asarray)
+         - [`ignore`](#ignore)
+         - [`collapse`](#collapse)
    - [`toJSON()` and `toYAML()`](#tojson-and-toyaml)
    - [Renamers](#renamers)
       - [`hardcore.renamers.camel`](#hardcorerenamerscamel)
@@ -68,6 +78,7 @@ It exposes:
 
  - A parser in the form a write stream
  - Node constructors
+ - Some utilities
 
 Here’s what you can do with it:
 
@@ -79,33 +90,30 @@ Here’s what you can do with it:
    exactly what the end result will look like: you can specify which nodes to
    ignore, which to consider ‘plural’, and you can map names, transform or
    coerce values selectively, etc.
- - What the hell, why not throw in `toYAML` too.
  - Construct XML or HTML documents node-by-node using the same building
    blocks the parser uses.
 
 ### Caveats
 
-While I think this might(?) currently be the most rigorous XML library for Node,
-it isn’t truly spec compliant. For example, internode whitespace outside of the
-root element of a document is not preserved regardless of settings, and
-validation probably misses any number of finer stipulations in the spec.
+Hardcore is pretty hardcore by local standards for this sort of thing, but it’s
+definitely not as hardcore as it could be. It’s not spec compliant, certainly.
+Some of the divergences are minor and typical (for example, internode whitespace
+outside the root element is always discarded). Others are more significant even
+if obscure -- for example, at the moment, arbitrary substitution of sequences in
+DTD declarations with parameter references is usually not supported.\*
 
-The DTD implementation is thorough enough that it will catch ‘grammatical’
-errors and it will even parse an external DTD correctly. But it isn’t *aware* of
-the DTD content -- that is, the DTD isn’t used to interpret the document itself.
-This is mainly because no one has used a DTD since 2002 and yet they make up the
-vast majority of the XML spec -- it would be a lot to implement, and for what?
-It was weird enough to spend as much time as I did on a dead technology I
-figured, and anyway the point here was to parse the document and transform it,
-not to render it for a viewing human or process its actual data content.
+Neither DTDs nor HTML were the chief reasons for Hardcore to exist, hence the
+more relaxed attitude. That said, both will be adequate for most use cases.
 
-tl;dr the validation is mainly about grammar and doesn’t actually use DTDs
+As far as validation goes, what Hardcore is pretty purely interested in the
+document at a ‘grammatical’ level. Even when a DTD is present, the data within
+it is not used in any way to interpret or validate the document.
 
-There’s a very important caveat regarding HTML. HTML support is secondary in
-this library, and not as rigorous. While ‘normal’ stuff will be handled fine,
-and it can even take care of some of the weirder allowances like legal omission
-of certain open and close tags, there are definitely obscure cases that could
-cause parsing problems, and there are very few sanity checks for validity.
+HTML mode is pretty cool about whatever you throw at it. Hardcore knows about
+stuff like implicit elements and tags, which tags may self-close without a
+slash, and overall document structure. On the whole it does not know, however,
+about which elements are legal as children of other elements. With HTML, the
+aim is just to parse, and any validatation is incidental to that goal.
 
 Finally note that using this library may mean coming in close contact with XML.
 All usual safety precautions apply: use in a well-ventilated area and make sure
@@ -113,6 +121,12 @@ a friend knows where you are. Have them check in on you occasionally. Meet in a
 public space. Do not operate heavy machinery, do not shake the baby. Hardcore
 Enterprises cannot be held responsible for emotional or physical harm caused by
 interaction with XML.
+
+> \* Since this may be the one thing keeping Hardcore from being fully able to
+handle all DTD crap, I’m tempted to find a solution for it at some point, but
+these sorts of things are a pretty huge hassle since any given member, even
+members which themselves would normally be represented by objects rather than
+names, can be represented by a PR in theory.
 
 ## Parsing
 
@@ -148,11 +162,12 @@ hardcore.parse(xmlStr, opts)
     .catch(err => /* ... */);
 ```
 
-And I want you to feel like you have a lot of choices even though nodebacks are
-super dead:
+Or, if you just wish the world would stop *changing*:
 
 ```js
-hardcore.parse(xmlStr, opts, (err, doc) => { /* ... */ });
+hardcore.parse(xmlStr, opts, function(err, doc) {
+   /* ... */
+});
 ```
 
 When using the `parse` method instead of `Parser` directly, you lose access to
@@ -324,190 +339,479 @@ despite the name of the former.
 
 ### `toObject()`
 
-While the parsed representation is already an object, it likely isn’t the one
-you really want if, for example, you’re using the XML as a data source.
+The `toObject` method was the main point of hardcore to begin with. Although you
+could use it with the default settings, you’re probably going to want to do some
+configuration -- and that configuration goes a bit deeper than what you’d
+usually put into an ‘options’ object, so I want to give some background on what
+the point of all this is, first. Skip this section if you already know why 
+working with XML data is a radioactive hellscape.
 
-There are a number of existing node modules that convert XML to objects. Some
-have a lot of helpful options, but none gave me quite what I needed -- this was
-the impetus for hardcore.
+#### Premise
 
-XML doesn’t map neatly to sane data formats like JSON, YAML, or actual objects.
-In addition to having no means to respresent anything except strings and
-hierarchies, XML makes no distinction between what we would call objects and
-arrays. We want objects with properties. That means, first of all, sacrificing
-sequence (usually). If a node has mixed content like text-element-text, you’re
-not going to see that sequence preserved. Well, not unless you use a custom
-`transform` function anyway (see below).
+Superficially, XML appears to be some kind of ... data ... format ... thing. And
+you’d think, hey, it’s probably pretty simple to *translate* it, following
+consistent principles, into usable objects (and thus, JSON and YAML, too). Of
+course, it is possible to represent XML as objects -- that’s exactly what the
+parser does, or the DOM for that matter. But that’s not really what you meant.
 
-Way back, the way I would have done this would have been to use a module like
-xml2json first and then just manipulate and pluck data from the result to build
-what I really wanted. That does work, but I found that for me, dealing with
-sometimes very large and ugly documents, it led me towards very imperative,
-convoluted code. The options system in hardcore is meant to solve that problem
-by providing a declarative way to enact such transformations.
+Given the XML `<a><b>xyz</b></a>`, you might picture an object representation
+like this: `{ a: { b: 'xyz' } }`. Mmm. Yes, that *would* appear to make sense,
+wouldn’t it? Unfortunately, that is definitely not what that XML translates to.
 
- - `asBool`: Filtered transform. The text content of a matched node will be cast
-   as a Boolean. This cast will take into account common alternate
-   representations like yes/no, 1/0, y/n. Default: undefined.
- - `asDate`: Filtered transform. The text content of a matched node will be cast
-   as a Date. Default: undefined.
- - `asNumber`: Filtered transform. The text content of a matched node will be
-   cast as a Number. Default: undefined.
- - `asString`: Filtered transform. The text content of a matched node will be
-   ... text. (The point here is that the "asX" transforms will make the *value*
-   of the node the result of the cast text, thus `{ name: 'text' }` instead of
-   `{ name: { $text: 'text' } }`. Default: `true`.
- - `attrPrefix`: String. If set, attributes will become properties of their
-   parent Element directly. May be an empty string if you’re not concerned with
-   collision -- this is default.
- - `attrProperty`: String. If set, attributes will be grouped in a single object
-   that is a property of the parent Element; this will be the name of that
-   property. Default: undefined. `attrPrefix` and `attrProperty` are mutually
-   exclusive options.
- - `collapse`: Filtered transform. Matching nodes will be ignored, but their
-   children and attributes, if applicable, will not be -- instead, they will be
-   inherited by the parent node. This is very useful when transforming XML,
-   which is often aggressively and pointlessly hierarchical. Default: undefined.
- - `ignore`: Filtered transform. Matching nodes will be ignored, as will any of
-   their descendents. Default: `[ Comment, Doctype, ProcessingInstruction ]`.
- - `plural`: Filtered transform. Matching nodes will be treated as arrays. This
-   bit can be a little confusing. More on this below. Default: `true`.
- - `rename`: For named nodes, you can supply a mapping of original names to new
-   names. This can be an Object or a Map; in the latter case, the keys can also
-   be regex patterns. It can also be a function, which takes a name and returns
-   a name.
- - `renamer`: A function that takes a name and returns a name. There are several
-   built-in renamer functions available at `hardcore.renamers`. The default
-   value is `hardcore.renamers.camel` -- it will convert names to conventional
-   JS camelcase. Names given in `rename` supercede this setting.
- - `textProperty`: String. Like `attrProperty`, but for text. I suspect most of
-   the time we want text to be handled by `asString`, but even with `asString`
-   set to `true`, it is possible to have a node with mixed content, or text and
-   attributes, which will necessitate assigning text to a property. Default:
-   '$text'.
- - `transform`: Function to apply custom transformations. It can also be a Map.
-   The workings of `transform` are described in detail below.
- - `withNS`: Boolean. Whether to include or omit namespace prefixes. Note that
-   this setting will influence how names are matched in filtered transforms,
-   too. Note, default is `false`, unlike `toXML`.
+The most minimal lossless translation of the above ‘simple’ XML into objects
+would need to look something like this:
 
-#### Filtered Transforms
+```js
+{ a: [ { b: [ 'xyz' ] } ] }
+```
 
-The options called ‘filtered transforms’ above take a common action on any nodes
-that pass provided predicate tests. It will accept a single value or an array of
-values. Predicates can be standard predicate functions (they receive the node
-and should return true or false), a string (will match named elements), a regex
-pattern (same), or any of the node constructors (Element, Comment, etc). A
-single value of `true` will cause the transformation to apply to all nodes.
+That doesn’t even account for attributes. Well, to be fair, in JS, an array may
+possess arbitrary properties, and given that the set of legal XML attribute
+names wouldn’t conflict with array indices, you could get away with the above.
+But it wouldn’t cut it for JSON and YAML, which would require yet another tier
+for every node.
 
-#### Plurality
+What if we make some assumptions?
 
-The `plural` predicate(s) are used to determine whether a node should be
-translated to an array. You may find it odd that by default, all nodes are. This
-has to do with what might be the single most important way XML sucks. In the
-absence of a priori knowledge, the only safe assumption that will always yield a
-consistent result is that *all nodes* are arrays. Bear with me...
+1. Assume: node sequence is not meaningful
+
+Given that statement, we could safely produce this:
+
+```js
+{ a: { b: { $text: 'xyz' } } }
+```
+
+But we’re still not there ... we need to go further.
+
+2. An element whose only children are text nodes can be represented *as* that
+   text.
+
+```js
+{ a: { b: 'xyz' } }
+```
+
+There we go. Nice! OH WAIT, we just got a new document from the same source, but
+it looks like *this*
 
 ```xml
-<pizza>
-  <topping>anchovy</topping>
-  <slices>8</slices>
-</pizza>`
+<a><b>xyz</b><b xmlsucks="omg yes it does">abc</b></a>
 ```
 
-Here, if we set `plural` to match nothing, we’d get:
+Hahahahahaaaaa aaha ha hhhaaa xmmmllll
 
-```js
-{ pizza: { topping: 'anchovy', slices: '8' } }
-```
+Okay, you get the idea. There is *no way* for this process to be simple. And
+categorical assumptions only get us so far when it comes to complex documents
+where, say, sequence usually doesn’t matter, except for in this one element... 
 
-That actually makes sense. But then, what if sometimes there are more toppings?
+In the past, I dealt with this sort of translation from XML into usable data by
+taking pieces bit by bit and constructing the real object. For larger docs with
+complex requirements, the code that this leads to is not only painfully verbose,
+it also inevitably turns into imperative spaghetti very quickly.
+
+What hardcore offers is a more-or-less declarative system based on defining
+rules for how nodes will be interpreted. Each rule has a `match`, which
+determines whether it applies, and in addition may have other options that tweak
+the output in small or large ways. It’s like a javascript DTD that is hopefully
+not as horrible as that sounds now that I put it like that...
+
+#### Main Options
+
+The main options object passed to `toObject` can have these properties:
+
+ - `rules`: An array of rules declaring how the XML will be processed.
+ - `renamer`: A function, object hash, or map for renaming nodes.
+ - `withNS`: Boolean (‘with namespaces’). Defaults to `false`. This will affect
+   not only how names appear but also how rules that match on names behave.
+
+##### Main Renamer
+
+Individual rules can override the main renamer -- this is just the fallback when
+nothing else was specifically applied.
+
+If set to `undefined`, the original names will be used, but by default, names
+get converted to (acronym-aware) camelcase. You can write a custom renaming
+function or use one of the other built-in options from `hardcore.renamers`.
+
+An alternative to supplying a function is to supply an object hash
+(`{ oldName: newName }`) or map. 
+
+Note that not all nodes have names to begin with. Nameless nodes instead get as
+their original names generics like '$comment'. These are collision safe since $
+cannot start a real XML name.
+
+#### Default Rules
+
+In the absence of any applicable custom rules, there are defaults which apply.
+These favor the production of the most *minimal* rather than the most
+*consistent* result. By default, order is not preserved (unless you count
+property order, which I suppose you can as long as the data remains in V8) and
+comments, as well as DTDs and ‘exotic’ nodes like ProcessingInstruction, are
+ignored.
+
+While this production makes sense for the bulk of any given ‘normal’ document,
+there will almost always be nodes that need special handling, which is the
+reason custom rules exist. The most common reason to write a rule is to define
+certain Elements as being *plural*. Consider the following case:
 
 ```xml
-<pizza>
-  <topping>anchovy</topping>
-  <topping>drano</topping>
-  <slices>8</slices>
-</pizza>
+<litter>
+   <cat>Grumpycat</cat>
+</litter>
+<litter>
+   <cat>Lil Bub</cat>
+   <cat>Maru</cat>
+</litter>
 ```
 
-Now we’ll get:
+The result of a `toObject` transformation with no custom rules would be this:
 
 ```js
-{ pizza: { topping: [ 'anchovy', 'drano' ] slices: '8' } }
+{
+   litter: [
+      { cat: 'Grumpycat' },
+      { cat: [ 'Lil Bub', 'Maru' ] }
+   ]
+}
 ```
 
-The shitty bit here is that now we have a situation where you don’t know whether
-`doc.pizza.topping` is a string or an array of strings. You’d need to put type
-checking guards around everything. So what happens if we say *everything* is
-plural, then?
+The default rules favored the most minimal result by assuming that if there was
+only one element of a given name, and that node contains only text, then it
+should result in a property whose value is that text. But this sucks, because
+now we have an inconsistent type for `cat`. First it’s a string and then it’s
+an array. To use the data we’d need to fumble with type/instance checking and
+guards: it’s just a reconfiguration of the same old XML problems.
 
-```js
-{ pizza: [ { topping: [ 'anchovy', 'drano' ], slices: [ '8' ] } ] }
-```
-
-This is obviously not what anyone wants -- but it is safe. Anyway, this is why
-it’s up to you to make these decisions: `toObject` is just awaiting your orders.
-A sensible options profile for that document might look like this:
+So a good set of options in this case might look like this:
 
 ```js
 const opts = {
-  plural: [ 'topping' ],
-  rename: { topping: 'toppings' },
-  asNumber: [ 'slices' ]
+   rules: [
+      { match: 'litter', rename: 'litters', plural: true },
+      { match: 'cat', rename: 'cats', plural: true }
+   ]
 };
 
-// Now you’ll get consistent results for both examples:
-{ pizza: { toppings: [ 'anchovy' ], slices: 8 } }
-{ pizza: { toppings: [ 'anchovy', 'drano' ], slices: 8 } }
+/* ...leading to: */
+
+{
+   litters: [
+      { cats: [ 'Grumpycat' ] },
+      { cats: [ 'Lil Bub', 'Maru' ] }
+   ]
+}
 ```
 
-The `plural` transform is not exclusive of other transforms. A node can be both
-plural and a number, for example.
+I think that’s a good illustration of what the point of all this blathering is.
 
-#### Custom Transform
+#### Custom Rules
 
-The `transform` option lets you perform custom transformation, anything goes.
-It can be a single function or it can be a Map of predicate keys (which are just
-like the predicates / predicate arrays described above) with functions as
-values.
+Each rule in `rules` is an object that describes a match and one or more
+optional behaviors.
 
-An important note before we go on
+ - `match`: This is the filter that determines whether the rule applies.
+ - `rename`: A new name for the node or a function that produces one.
+ - `before`: This optional function returns a value to represent the node.
+ - `after`: This optional function can perform a final transformation after
+   a node’s children have been handled.
+ - `coerce`: This option is shorthand for the most common uses of `first`.
+ - `ignore`: If true, the node (and any children it may have) will be discarded.
+ - `collapse`: If true, the node’s children will be ‘inherited’ by its parent
+   (even if `ignore` was true). If the value is a string, the node will be
+   replaced by the child of that name.
+ - `plural`: If true, the node will end up being the member of an array. If
+   explicitly false, the node will always be singular, even if it had same-name
+   siblings (in which case the last value will be the one that gets through).
+ - `afterPlural`: Because `after` runs on the values associated with individual
+   nodes, `afterPlural` exists to allow you to also specify an ‘after’ for the
+   thus-produced array as well. Useful if you need to apply a sort function.
+ - `asArray`: This makes a node that would have been an object into an array,
+   where its children are the members, so the sequence is explicitly preserved.
+   This is very different from plural: plural says ‘I am one of potentially
+   several’ while ‘asArray’ says ‘the sequence of my children matters so I
+   cannot be mapped to a concise object.’
 
+To write rules, you’ll need to understand how they get applied. Consider this
+example document:
 
+```xml
+<elemR>
+   <elemA attr="true">
+      <elemB>abc</elemB>
+      <elemC>def</elemC>
+   </elemA>
+</elemR>
+```
 
-There are a number of options that accept either one value or an array of
-values, where a value is a string, a regex pattern, a predicate function, or any
-of the node constructors (Element, Comment, etc). These act as filters -- for
-strings and regex patterns, against named nodes; functions receive the node and
-return true or false; and constructors are matched against instance type. A
-single value of `true` is also allowed; then the transform will apply to every
-node (which only makes sense with a few of them). We’ll call these ‘filtered
-transforms’ below.
+Initially, `toObject` walks the tree starting from the node you called the
+method on, working its way down each path from top to bottom, left to right. A
+representation of each node is created; by default, these will always be objects
+or strings, but you can control the ‘base’ value using `first`. In this phase,
+the `ignore` and `collapse` options are also applied and the node’s new name, if
+any, will be determined.
+
+<pre>
+                                     (obj) <------ type: Document
+                                       |
+                                     (obj) <------ type: Element, name: elemR
+                                       |
+                                     (obj) <------ type: Element, name: elemA
+                                    /  |  \
+type: Attribute, name: attr --> (str)(obj)(obj) <- type: Element, name: elemC
+                                       |    |
+                                     (str)(str) <- type: Text, name: '$text'
+</pre>
+
+At each ‘leaf’ it begins walking backwards, linking the new node values to their
+parents (possibly their *new* parents, if you used `collapse`), taking into
+account `plural`, and finally applying `after` if present.
+
+The sequence will be familiar if you’ve ever used a sax parser. In a sense,
+hardcore’s `toObject` works a lot like a souped up, specialized sax parser. This
+is the walk sequence for the above document:
+
+ 01. bf. elemR
+ 02. bf. elemA
+ 03. bf. attr
+ 04. af. attr
+ 05. bf. elemB
+ 06. bf. *abc*
+ 07. af. *abc*
+ 08. af. elemB
+ 09. bf. elemC
+ 10. bf. *def*
+ 11. af. *def*
+ 12. af. elemC
+ 13. af. elemA
+ 14. af. elemR
+
+##### `match`
+
+This is the only required property for a rule. There are four types of matches.
+More specific matches must come before more generic matches, because only the
+earliest matching rule will be applied.
+
+ - **Name / key matches**
+   - String: `'name'`
+   - Regex: `/^name$/`
+ - **Node matches**
+   - Constructor: `Comment`
+ - **Custom function matches**
+   - Function: `function(node) { return node.children.length == 2 }`
+ - **Wildcard matches**
+   - Boolean: `true`
+
+While the match value could be any of these, it can also be an array with more
+than one -- for example, `[ Element, 'cat', 'kitten' ]`. This requires
+additional explanation. 
+
+In an array match, values of one type (name, node, or function; wildcard
+wouldn’t make sense) are ‘or’ matches: match nodes with the name ‘kitten’ OR the
+name ‘cat’. But values of different types are ‘AND’ matches: match nodes that
+are Elements *and* have *either* of those names. 
+
+This fits well with real world use. It is far more useful to be able to say
+`[ Attribute, 'id' ]` (attributes with the key 'id') than to be able to say
+"attributes OR any node named 'id'" -- to achieve the latter, were one really to
+desire it, would demand a custom matching function.
+
+If you use the `true` wildcard, it should always appear last in your rule list.
+The most obvious use for it is to `ignore` all nodes that weren’t addressed by
+other rules, but I suppose there could be other obscure use-cases (like if you
+wanted to generate a ‘meta’ object describing the document structure).
+
+Note that the three HTMLElement nodes all inherit from Element and thus may be
+matched with it; likewise Attribute is inclusive of HTMLAttribute.
+
+##### `rename`
+
+This can be a string or a function that returns a string. If it’s a function,
+its arguments are the original name and the node. If present, `rename` overrides
+the `opts.renamer` function if it was supplied.
+
+##### `before` and `coerce`
+
+The `first` function receives the original Node and whatever *would* be its
+generic representation (baseVal). It returns a value which will represent this
+node in the result object. It’s fine to just mutate the baseVal and return that.
+
+```js
+function first(node, baseVal) { /* ... */ }
+```
+
+The baseVal of a node is always an object (e.g. Element) or a string (e.g.
+Text, Attribute). If you return a primitive, but the node has children, the
+children will end up being ignored unless `collapse` was true (because otherwise
+they no longer have anything to get attached to)
+
+There is one special case, `undefined`. Returning `undefined` will cause the
+node to be ignored. Indeed, this is what `ignore` is really shorthand for.
+
+While Element’s baseVal is a generic empty object, more exotic nodes come with
+properties already attached. For example, if you choose to include processing
+instruction nodes, the baseVal will be an object with the properties
+`$target` and `$instruction`.
+
+The `coerce` option is shorthand for certain common `first`s related mainly to
+Element and Attribute nodes. Valid values for `coerce` are:
+
+ - Boolean
+ - Date
+ - Number
+ - String
+
+Even though `coerce` is shorthand for pre-defined `first` functions, you can use
+both. If both are defined, the coercion will occur first; therefore `first` will
+receive the result of the coercion as its second argument. This is quite useful
+when using `coerce: String`.
+
+Depending on the node type, coerce behaves a bit differently. For nodes with a
+string baseVal, like Attribute, the string value will simply be cast to the new
+type. But if the baseVal is not a sting, the textual content of the node’s
+immediate children is what will get cast.
+
+```xml
+<cat name="Spottis" age="12">
+   <perfect>yes</perfect>
+   <fur>white / black</fur>
+</cat>
+```
+
+```js
+const rules = [
+   { match: [ Attribute, 'age' ], coerce: Number },
+   { match: [ Element, 'adorableness' ], coerce: Boolean },
+   { match: [ Element, 'fur' ], coerce: String }
+   { match: [ Element, 'cat' ], collapse: true }
+];
+
+// ...
+
+{ name: 'Spottis', age: 12, perfect: true, fur: 'white / black' }
+```
+
+The Boolean coercion recognizes common analogue values like ‘yes’ and ‘N’.
+
+##### `after` and `afterPlural`
+
+After children are processed (and attached to the baseVal as properties, if
+applicable), the `after` function will be called. It receives the assembled
+object or value and may return a new value. The return value will supplant the
+former value. Unlike `before`, returning `undefined` will be taken literally in
+this phase.
+
+The `transform` function also receives the original node and the name:
+
+`function after(val, node, name) {}`
+
+This is the most powerful tool at your disposal, because this is the best time
+to perform more aggressive manipulations of the result object’s structure.
+Rather than being limited to ignoring or collapsing a node, you can completely
+alter the object at any branch. Most users will not need this much. It invites
+some of the imperative logic we’re trying to get away from, but sometimes when
+dealing with complex documents, that can’t be avoided. At least this lets us
+keep things well-organized.
+
+An `afterPlural` function, if provided, is the same, but gets called with the
+resulting array as its value. This special ‘after’ is included because the
+`after` of a plural rule applies to the individual array members (which map
+back to nodes) rather than the resulting collective array. Its primary use cases
+would be to sort, filter, or reduce.
+
+##### `plural`
+
+If `plural` is true, the node will be treated as an array member. Depending on
+what you’re aiming for, this may be the only option you really need. By default,
+a node will only become an array member if it has siblings of the same name.
+This can lead to problems when a node *may or may not* have such siblings,
+since you want to have a consistent result regardless.
+
+You can also set `plural` explicitly to `false`. If you do, it will never be an
+array and if there are same-name siblings, the last one will overwrite any
+previous.
+
+##### `asArray`
+
+With `asArray`, a node will be represented as an array of its children.
+Therefore this option only makes sense when applied to nodes that have children
+in the first place. Most users won’t need it, but when it is needed it’s
+critical (e.g. HTML) because it allows child sequence to be explicitly
+preserved. The tradeoff is significantly more verbose, difficult to use output.
+
+##### `ignore`
+
+An ignored node is eliminated from the result. Its children will also be
+ignored -- unless `collapse` is true, in which case they will be inherited by
+the ignored node’s parent.
+
+##### `collapse`
+
+If collapse is `true`, the node’s children will be treated as children of this
+node’s parent. There are two common cases for this:
+
+ - The node is ignored but its children should not be.
+ - The node is to become a primitive value, and therefore cannot carry children.
+
+```xml
+<cats><cat>maru</cat><cat>spooky</cat></cats>
+```
+
+```js
+const rules = [ { match: 'cats', collapse: true } ];
+
+// ...
+
+{ cat: [ 'maru', 'spooky' ] }
+```
+
+Collapse can also be set to a string value. In this case, the child of that name
+will *replace* this node’s value.
+
+```js
+const rules = [ { match: 'cats', collapse: 'cat' } ];
+
+// ...
+
+{ cats: [ 'maru', 'spooky' ] }
+```
+
+The targetted child becomes the value of the parent, replacing it but assuming
+its name. This is useful in cases where a document has an unnecessarily complex
+hierarchy, which is a common problem in XML. Effectively it’s just a variation
+on ignore-collapse where names work differently. Note however that to use this
+functionality means that if the targetted child node had siblings, they would be
+omitted from the result.
 
 ### `toJSON()` and `toYAML()`
 
-The options for these include all of the options for `toObject`, plus all of
-the options for `toXML`, with these differences:
+The options for these include all of the options for `toObject` with these
+differences and additions:
 
  - `asComment`: An extra filtered transform. Nodes matching will be included in
    the output as comments. Note that JSON technically does not allow comments,
    though many implementations permit them anyway. Default for YAML:
    `[ Comment ]`. Default for JSON: `undefined`.
- - `quote`: This is not applicable to `toJSON`. For `toYAML`, the value can be
-   a single quote, a double quote, an empty string, or one of the YAML string
-   block prefixes. If undefined, but `pretty` is true, then no-quotes will be
-   favored, but when necessary, or when the string is long, '>-' will be used.
+ - `quote`: This is only applicable for `toYAML`. The value can be a single
+   quote, a double quote, an empty string, or one of the YAML string block
+   prefixes. If undefined, but `pretty` is true, then no-quotes will be favored,
+   but when necessary, or when the string is long, '>-' will be used.
+ - `tab`: This is only applicable for `toJSON`. As with `toXML`, it’s the indent
+   string. Defaults to `'\t'`.
 
 ### Renamers
 
 You can supply a custom renamer (or null), but some of the more obvious ones are
-made available out of the gate.
+made available out of the gate. All of these renamers will strip out characters
+that would be illegal in JS property identifiers, so that you don’t need to use
+computed property accessors. (Reserved words like ‘default’ aren’t stripped --
+linter complaints aside, these are legal as literal property names).
 
 #### `hardcore.renamers.camel`
 
 Standard JS-style camelcase. Common acronyms are handled intelligently (e.g.
-'ID' => 'id', but 'CatId' => 'catID').
+'ID' => 'id', but 'CatId' => 'catID'). The acronym list is hardly comprehensive
+(I mean, it can’t be, really) but I tried to cover stuff likely to appear in
+this context, like ‘ID’ and ‘URL’. Numbers with decimals are also handled:
+'xyz\_1.2' => 'xyz1\_2'
 
 #### `hardcore.renamers.lower`
 
@@ -515,9 +819,9 @@ Entirely to lowercase.
 
 #### `hardcore.renamers.snake`
 
-Snake case -- lowercase with underscores between words. Good for when your
-output is ultimately going to be consumed in a context where this is
-conventional, like Python or PHP -- when in rome, etc.
+Snake case -- lowercase with underscores between words. Studies have shown that
+users of snake case are 0.7% more likely to quote statistics about reading speed
+and identifier naming.
 
 ## XML
 
@@ -572,6 +876,9 @@ immediate parent; the second returns an array of all parents, from farthest to
 nearest; and the third returns the iterable that underlies `parents` but it’s
 inclusive of the node itself. These properties and methods make it easy to loop
 over a node "path" and allow you to do things like `node.parents.find()`.
+
+There is also a `siblings` property, which returns an array of the node’s
+siblings (that is, its immediate parent’s children, but not including itself).
 
 Going the other direction doesn’t play nice with iteration, of course, since a
 parent may have multiple children. There are some helpers, but you’ll probably
@@ -638,7 +945,7 @@ as a single element. Therefore if you parse a snippet of a larger document, so
 long as it is contained in a single node, the result will be valid as a
 document, unless you specify Element as your `target`.
 
-##### Argument Object
+**Argument Object**
 
  - `version`: The xml version, which is any number >= 1 and < 2. Optional.
  - `encoding`: An optional string indicating the document encoding.
@@ -670,7 +977,7 @@ document.root = new Element({ name: 'hello' });
 
 Element is the most important node; it’s a "tag".
 
-##### XML Example
+**XML Example**
 
 ```xml
 <hello>yes<what/></hello>
@@ -678,7 +985,7 @@ Element is the most important node; it’s a "tag".
 
 That’s a "hello" element with two children, a Text node and another Element.
 
-##### Argument Object
+**Argument Object**
 
  - `namespace`: Optional.
  - `name`: The name of the element, required.
@@ -727,7 +1034,7 @@ When creating a document from scratch, you probably won’t need to use this
 constructor directly -- the `setAttribute()` method of Element is more
 convenient.
 
-##### Argument Object
+**Argument Object**
 
  - `namespace`: Optional.
  - `key`: Required.
@@ -741,7 +1048,7 @@ A comment can contain pretty much any text except the sequence '--'. It also
 can’t end with '-'. If you set a value with these sequences they’ll be corrected
 to '- -' and '- ' respectively.
 
-##### Argument Object
+**Argument Object**
 
  - `content`: The text of the comment. Defaults to ''.
 
@@ -752,7 +1059,7 @@ The only property is `content`.
 Text nodes require '<'' and ']]>' to be escaped. This will be done automatically
 if needed.
 
-##### Argument Object
+**Argument Object**
 
  - `content`: The text itself.
 
@@ -766,7 +1073,7 @@ A processing instruction is a directive that targets a specific interepreting
 agent, or something like that. They’re the ones that begin with '<?', except for
 the xml declaration.
 
-##### Argument Object
+**Argument Object**
 
  - `target`: The target of the processing instruction.
  - `instruction`: The instruction text itself (defaults to '', which is valid).
@@ -784,7 +1091,7 @@ It stands for character data, and really it’s a special type of text node. Tha
 is, it resolves to text content and therefore can appear only where text can
 appear (i.e., inside Elements).
 
-##### Argument Object
+**Argument Object**
 
  - `content`: Defaults to ''.
 
@@ -821,7 +1128,7 @@ entities, and other stuff can appear in the document and how they should behave,
 what constitutes their being well-formed, or what they mean. It sounds useful
 but don’t be fooled.
 
-##### Argument Object
+**Argument Object**
 
  - `name`: Required.
  - `systemID`: Optional.
@@ -844,7 +1151,7 @@ possess a ‘text declaration’, which is an ‘xml declaration’ that they de
 call something else (well, it does differ -- `version` is optional and
 `standalone` is absent).
 
-##### Argument Object
+**Argument Object**
 
  - `version`: The xml version, a number >= 1 and < 2. Optional.
  - `encoding`: The encoding string. Optional.
@@ -868,7 +1175,7 @@ reference was set to.
 
 Oh my god, why am I explaining this. No one will ever use this.
 
-##### XML Example
+**XML Example**
 
 ```xml
 <!ENTITY % withPizza 'INCLUDE'>
@@ -878,7 +1185,7 @@ Oh my god, why am I explaining this. No one will ever use this.
 ]]>
 ```
 
-##### Argument Object
+**Argument Object**
 
  - `keyword`: The keyword of the section. It can be 'IGNORE', 'INCLUDE' or a
    parameter reference (e.g. "%myParam;"). Required.
@@ -893,13 +1200,13 @@ A parameter reference looks like an entity reference but with ‘%’ instead of
 (They can also be used as names for ConditionalSections, but you don’t need
 the constructor for that).
 
-##### XML Example
+**XML Example**
 
 ```xml
 %myParam;
 ```
 
-##### Argument Object
+**Argument Object**
 
  - `name`: The name of the parameter. It doesn’t matter if you include the
    surrounding punctuation or not. Required.
@@ -912,13 +1219,13 @@ Defines an element, except its attributes (use AttListDeclaration for that). The
 definition describes what kind of children may appear inside, and this is sort
 of complicated -- the next two classes are used for that.
 
-##### XML Example
+**XML Example**
 
 ```xml
 <!ELEMENT pizza EMPTY>
 ```
 
-##### Argument Object
+**Argument Object**
 
  - `namespace`: Optional.
  - `name`: Element name, required.
@@ -946,7 +1253,7 @@ ElementDeclaration is a special type of ChildElementGroup.
 Like `attributes` or `children`, ChildElementGroup possesses almost all array
 methods.
 
-##### XML Example
+**XML Example**
 
 ```xml
 <!ELEMENT piñata (candy|toy|sadness)* >
@@ -958,7 +1265,7 @@ as those of the declaration itself -- it doesn’t matter whether you set them o
 the ElementDeclaration or its `contentSpec` property. In this case, the `type`
 is "CHOICE" and the `quantifier` is "*".
 
-##### Argument Object
+**Argument Object**
 
  - `quantifier`: This can be '', '+', '?' or '*', though the `type` may restrict
    which of these are valid on the root element.
@@ -972,7 +1279,7 @@ here is "SEQUENCE" -- that’s why the elements are comma seperated. While
 ChildElementGroups can nest more ChildElementGroups, each ‘leaf’ group must
 contain at least one ChildElementName.
 
-##### XML Example
+**XML Example**
 
 ```xml
 <!ELEMENT litter (kitten+, runt) >
@@ -981,7 +1288,7 @@ contain at least one ChildElementName.
 The + sign is inside the group, meaning it’s the quantifier of the
 ChildElementName as opposed to the group.
 
-##### Argument Object
+**Argument Object**
 
  - `namespace`: Optional.
  - `name`: Element name, required.
@@ -997,18 +1304,27 @@ Logically, these might as easily have been part of the ElementDeclaration since
 each AttListDeclaration can correspond with only one Element, but I’m glad it
 isn’t since ElementDeclaration is already complicated enough.
 
-##### XML Example
+**XML Example**
 
 ```xml
-<!ATTLIST pizza
-    topping (anchovies|olives|sadness) "anchovies">
+<!ATTLIST pizza topping (anchovies|olives|sadness) "anchovies">
 ```
 
 In this example, pizza is the name of the element, and topping is the name of
 its one attribute. This is followed by an enumeration of valid values and a
 default value to use if the attribute is absent.
 
-##### Argument Object
+When `pretty` is used with `toXML()`, the definitions within will be aligned as
+a table:
+
+```xml
+<!ATTLIST student_name
+    student_no               ID                       #REQUIRED
+    tutor_1                  IDREF                    #IMPLIED
+    tutor_2                  IDREF                    #IMPLIED>
+```
+
+**Argument Object**
 
  - `namespace`: Optional.
  - `name`: Element name, required.
@@ -1024,7 +1340,7 @@ example given for AttListDeclaration will suffice, too.
 
 This is another relatively complicated one.
 
-##### Argument Object
+**Argument Object**
 
  - `namespace`: Optional.
  - `name`: The attribute name, required.
@@ -1062,7 +1378,7 @@ means. '#REQUIRED' is what it sounds like, though.
 
 Defines a regular entity ('&something;') or a parameter entity ('%something;').
 
-##### XML Example
+**XML Example**
 
 ```xml
 <!ENTITY greeting "hello">
@@ -1071,7 +1387,7 @@ Defines a regular entity ('&something;') or a parameter entity ('%something;').
 Then you could use '&greeting;' anywhere that entity references are allowed.
 It could be that simple, anyway, but this is XML.
 
-##### Argument Object
+**Argument Object**
 
  - `name`: Entity name, required.
  - `isParameter`: Boolean (default false), indicates this is a parameter entity.
@@ -1088,13 +1404,13 @@ demands that there be a `systemID`.
 
 Go ahead, declare a notation with this handy helper!
 
-##### XML Example
+**XML Example**
 
 ```xml
 <!NOTATION xml-is-stupid PUBLIC "eh">
 ```
 
-##### Argument Object
+**Argument Object**
 
  - `namespace`: Optional.
  - `name`: Required.

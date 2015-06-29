@@ -11,19 +11,26 @@ sms.install();
 import * as errors from 'errors';
 import * as nodes  from 'nodes';
 
+import renamers from 'renamers';
+
 import Parser from 'parser';
 
 // PARSE AS METHOD /////////////////////////////////////////////////////////////
 
 const parse = (str, opts, cb) => new Promise((resolve, reject) => {
+	if ((opts instanceof Function) && !cb) {
+		cb = opts;
+		opts = undefined;
+	}
+
 	const parser = new Parser(opts);
 
-	parser.on('error', err => { 
+	parser.once('error', err => { 
 		if (cb) cb(err);
 		reject(err);
 	});
 
-	parser.on('result', res => {
+	parser.once('result', res => {
 		if (cb) cb(null, res);
 		resolve(res);
 	});
@@ -34,4 +41,4 @@ const parse = (str, opts, cb) => new Promise((resolve, reject) => {
 
 // EXPORT //////////////////////////////////////////////////////////////////////
 
-export default { Parser, parse, nodes, /* renamers,*/ errors };
+export default { Parser, parse, nodes, renamers, errors };

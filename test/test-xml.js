@@ -1,3 +1,5 @@
+var nodes = require('../').nodes;
+
 
 module.exports.parseTests = [
 	{
@@ -318,5 +320,187 @@ module.exports.parseTests = [
 		xml: '<script>abc  ;</script>',
 		exp: '<html>\n\t<head>\n\t\t<script>\nabc  ;</script>\n\t</head>\n\t<body></body>\n</html>',
 		html: true
+	},
+	{
+		msg: 'DocumentFragment is a valid target',
+		xml: '<a></a><b></b>',
+		exp: '<a/>\n<b/>',
+		target: 'document fragment'
+	},
+	{
+		msg: 'html can also use DocumentFragment',
+		xml: '<input><p>text</p>',
+		exp: '<input/>\n<p>\n\ttext\n</p>',
+		target: 'document fragment',
+		html: true
+	},
+	{
+		msg: 'html 5 doctype',
+		xml: '<!DOCTYPE html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		html: true
+	},
+	{
+		msg: 'document with internal DTD / element declarations',
+		xml:
+			'<?xml version="1.0"?>' +
+			'<!DOCTYPE note [' +
+			'<!ELEMENT note (to,from,heading,body)>' +
+			'<!ELEMENT to (#PCDATA)>' +
+			'<!ELEMENT from (#PCDATA)>' +
+			'<!ELEMENT heading (#PCDATA)>' +
+			'<!ELEMENT body (#PCDATA)>' +
+			'<!ELEMENT pdq (head, (p | list | note)*, div2*)>' +
+			']>' +
+			'<note>' +
+			'<to>Tove</to>' +
+			'<from>Jani</from>' +
+			'<heading>Reminder</heading>' +
+			'<body>Don\'t forget me this weekend</body>' +
+			'</note>',
+		exp:
+			'<?xml version="1.0" ?>\n' +
+			'<!DOCTYPE note [\n' +
+			'\t<!ELEMENT note (to, from, heading, body)>\n' +
+			'\t<!ELEMENT to (#PCDATA)>\n' +
+			'\t<!ELEMENT from (#PCDATA)>\n' +
+			'\t<!ELEMENT heading (#PCDATA)>\n' +
+			'\t<!ELEMENT body (#PCDATA)>\n' +
+			'\t<!ELEMENT pdq (head, (p|list|note)*, div2*)>\n' +
+			']>\n' +
+			'<note>\n' +
+			'\t<to>\n\t\tTove\n\t</to>\n' +
+			'\t<from>\n\t\tJani\n\t</from>\n' +
+			'\t<heading>\n\t\tReminder\n\t</heading>\n' +
+			'\t<body>\n\t\tDon\'t forget me this weekend\n\t</body>\n' +
+			'</note>'
+	},
+	{
+		msg: 'external DTDs are understood as such / attdefs',
+		xml:
+			'<!ELEMENT document' +
+			'  (title*,subjectID,subjectname,prerequisite?,' +
+			'  classes,assessment,syllabus,textbooks*)>' +
+			'<!ELEMENT prerequisite (subjectID,subjectname)>' +
+			'<!ELEMENT textbooks (author,booktitle)>' +
+			'<!ELEMENT title (#PCDATA)>' +
+			'<!ELEMENT subjectID (#PCDATA)>' +
+			'<!ELEMENT subjectname (#PCDATA)>' +
+			'<!ELEMENT classes (#PCDATA)>' +
+			'<!ELEMENT assessment (#PCDATA)>' +
+			'<!ATTLIST assessment assessment_type (exam | assignment) #IMPLIED>' +
+			'<!ATTLIST student_name student_no ID #REQUIRED tutor_1 IDREF #IMPLIED tutor_2 IDREF #IMPLIED>' +
+			'<!ELEMENT syllabus (#PCDATA)>' +
+			'<!ELEMENT author (#PCDATA)>' +
+			'<!ELEMENT booktitle (#PCDATA)>',
+		exp:
+			'<!ELEMENT document (title*, subjectID, subjectname, prerequisite?, classes, assessment, syllabus, textbooks*)>\n' +
+			'<!ELEMENT prerequisite (subjectID, subjectname)>\n' +
+			'<!ELEMENT textbooks (author, booktitle)>\n' +
+			'<!ELEMENT title (#PCDATA)>\n' +
+			'<!ELEMENT subjectID (#PCDATA)>\n' +
+			'<!ELEMENT subjectname (#PCDATA)>\n' +
+			'<!ELEMENT classes (#PCDATA)>\n' +
+			'<!ELEMENT assessment (#PCDATA)>\n' +
+			'<!ATTLIST assessment\n' +
+			'\tassessment_type          (exam|assignment)        #IMPLIED>\n' +
+			'<!ATTLIST student_name\n' +
+			'\tstudent_no               ID                       #REQUIRED\n' +
+			'\ttutor_1                  IDREF                    #IMPLIED\n' +
+			'\ttutor_2                  IDREF                    #IMPLIED>\n' +
+			'<!ELEMENT syllabus (#PCDATA)>\n' +
+			'<!ELEMENT author (#PCDATA)>\n' +
+			'<!ELEMENT booktitle (#PCDATA)>'
+	}
+];
+
+module.exports.conversionTests = [
+	{
+		msg: 'Default options, text in element',
+		xml: '<a>text</a>',
+		exp: { a: 'text' }
+	},
+	{
+		msg: 'Default options, default renamer',
+		xml: '<yes-sir>abc</yes-sir>',
+		exp: { yesSir: 'abc' }
+	},
+	{
+		msg: 'Custom renamer (function)',
+		xml: '<qua>abc</qua>',
+		exp: { quack: 'abc' },
+		renamer: function(str) { return str + 'ck'; }
+	},
+	{
+		msg: 'Custom renamer (hash)',
+		xml: '<qua>abc</qua>',
+		exp: { quack: 'abc' },
+		renamer: { qua: 'quack' }
+	},
+	{
+		msg: 'Custom renamer (map)',
+		xml: '<qua>abc</qua>',
+		exp: { quack: 'abc' },
+		renamer: new Map([ [ 'qua', 'quack' ] ])
+	},
+	{
+		msg: 'Override default before (document)',
+		xml: '<?xml version="1.1" ?><a>text</a>',
+		exp: { $version: 1.1, a: 'text' },
+		rules: [ { match: nodes.Document } ]
+	},
+	{
+		msg: 'Override default ignore (comment)',
+		xml: '<!-- grace --><a>text<!-- jones --></a><!-- the rhythm -->',
+		exp: {
+			$comment: [ 'grace', 'the rhythm' ],
+			a: { $comment: 'jones', $text: 'text' }
+		},
+		rules: [ { match: nodes.Comment } ]
+	},
+	{
+		msg: 'Implicit plurality',
+		xml: '<a><b>abc</b><b>def</b></a>',
+		exp: { a: { b: [ 'abc', 'def' ] } }
+	},
+	{
+		msg: 'Explicit plurality',
+		xml: '<a><b>abc</b></a>',
+		exp: { a: { b: [ 'abc' ] } },
+		rules: [ { match: 'b', plural: true } ] 
+	},
+	{
+		msg: 'Preserved sequence',
+		xml: '<a><b>xyz</b><c>pdq</c><b>123</b></a>',
+		exp: { a: [ { b: 'xyz' }, { c: 'pdq' }, { b: '123' } ] },
+		rules: [ { match: 'a', asArray: true } ]
+	},
+	{
+		msg: 'Coerce boolean',
+		xml: '<a><b>true</b><b>yes</b><b>FALSE</b></a>',
+		exp: { a: { b: [ true, true, false ] } },
+		rules: [ { match: 'b', coerce: Boolean } ]
+	},
+	{
+		msg: 'Coerce date',
+		xml: '<a>2015-06-29T03:34:54.321Z</a>',
+		exp: { a: new Date('2015-06-29T03:34:54.321Z') },
+		rules: [ { match: 'a', coerce: Date } ]
+	},
+	{
+		msg: 'Coerce number',
+		xml: '<a><b>1</b><b>1.0</b><b>-2.33</b><b>infinity</b></a>',
+		exp: { a: { b: [ 1, 1, -2.33, Infinity ] } },
+		rules: [ { match: 'b', coerce: Number } ]
+	},
+	{
+		msg: 'Coercion + custom before',
+		xml: '<a>abc</a>',
+		exp: { a: 'ABC' },
+		rules: [ {
+			match: 'a',
+			coerce: String,
+			before: function(y, x) { return x.toUpperCase(); }
+		} ]
 	}
 ];
