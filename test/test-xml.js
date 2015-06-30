@@ -502,5 +502,73 @@ module.exports.conversionTests = [
 			coerce: String,
 			before: function(y, x) { return x.toUpperCase(); }
 		} ]
-	}
+	},
+	{
+		msg: 'Collapsed node, no remaining value',
+		xml: '<a><b><c>123</c><d>456</d></b></a>',
+		exp: { a: { c: '123', d: '456' } },
+		rules: [ { match: 'b', collapse: true } ]
+	},
+	{
+		msg: 'Collapsed node, remaining value',
+		xml: '<a><b><c>123</c><d>456</d></b></a>',
+		exp: { a: { b: '123 456', c: '123', d: '456' } },
+		rules: [ { match: 'b', collapse: true, coerce: String } ]
+	},
+	{
+		msg: 'Collapsed node, explicit child target',
+		xml: '<a><b><c>123</c><d>456</d></b></a>',
+		exp: { a: { b: '456' } },
+		rules: [ { match: 'b', collapse: 'd' } ]
+	},
+	{
+		msg: 'Ignored node',
+		xml: '<a><b><c>123</c><d>456</d></b></a>',
+		exp: { a: { b: { c: '123' } } },
+		rules: [ { match: 'd', ignore: true } ]
+	},
+	{
+		msg: 'Ignored node with children',
+		xml: '<a><b><c>123</c><d><e>123</e><f>123</f></d></b></a>',
+		exp: { a: { b: { c: '123' } } },
+		rules: [ { match: 'd', ignore: true } ]
+	},
+	{
+		msg: 'Ignored node with children, collapsed',
+		xml: '<a><b><c>123</c><d><e>123</e><f>123</f></d></b></a>',
+		exp: { a: { b: { c: '123', e: '123', f: '123' } } },
+		rules: [ { match: 'd', ignore: true, collapse: true } ]
+	},
+	{
+		msg: 'After modifies result',
+		xml: '<a><b c="d"></b></a>',
+		exp: { a: 1000 },
+		rules: [ {
+			match: 'a',
+			after: function(y) { if (y.b.c == 'd') return 1000; }
+		} ]
+	},
+	{
+		msg: 'After plural modifies plural array',
+		xml: '<a><b>4</b><b>5</b><b>2</b></a>',
+		exp: { a: { b: [ 2, 4, 5 ] } },
+		rules: [ {
+			match: 'b',
+			coerce: Number,
+			afterPlural: function(a) { return a.sort(); }
+		} ]
+	},
+	{
+		msg: 'After plural applies after ‘after’',
+		xml: '<a><b>4</b><b>5</b><b>2</b></a>',
+		exp: { a: { b: [ -5, -4, -2 ] } },
+		rules: [ {
+			match: 'b',
+			coerce: Number,
+			after: function(val) { return -val; },
+			afterPlural: function(a) {
+				return a.sort(function(a, b) { return b < a; });
+			}
+		} ]
+	},
 ];
