@@ -252,73 +252,73 @@ module.exports.parseTests = [
 	{
 		msg: 'html will use longform empty elements for most cases',
 		xml: '<html><head></head><body></body></html>',
-		exp: '<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html is not case-sensitive',
 		xml: '<html><head></HEAD><body></BODY></HTML>',
-		exp: '<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert missing open <html> tag',
 		xml: '<head></head><body></body></html>',
-		exp: '<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert missing close <html> tag',
 		xml: '<head></head><body></body>',
-		exp: '<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert missing open <head> tag when it has content',
 		xml: '<html><title></title></head><body></body></html>',
-		exp: '<html>\n\t<head>\n\t\t<title></title>\n\t</head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head>\n\t\t<title></title>\n\t</head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert missing close <head> tag',
 		xml: '<html><head><title></title><body></body></html>',
-		exp: '<html>\n\t<head>\n\t\t<title></title>\n\t</head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head>\n\t\t<title></title>\n\t</head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert missing open <body> tag when it has content',
 		xml: '<html><head></head><body>abc</body></html>',
-		exp: '<html>\n\t<head></head>\n\t<body>\n\t\tabc\n\t</body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body>\n\t\tabc\n\t</body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert missing close <body> tag',
 		xml: '<html><head></head>abc</body></html>',
-		exp: '<html>\n\t<head></head>\n\t<body>\n\t\tabc\n\t</body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body>\n\t\tabc\n\t</body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html will insert whatever pretty much',
 		xml: '<html>',
-		exp: '<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: '...even if given nothing',
 		xml: '',
-		exp: '<html>\n\t<head></head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html knows certain tags can self-close without a slash',
 		xml: '<br>',
-		exp: '<html>\n\t<head></head>\n\t<body>\n\t\t<br/>\n\t</body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head></head>\n\t<body>\n\t\t<br/>\n\t</body>\n</html>',
 		html: true
 	},
 	{
 		msg: 'html knows certain tags have whitespace preservation',
 		xml: '<script>abc  ;</script>',
-		exp: '<html>\n\t<head>\n\t\t<script>\nabc  ;</script>\n\t</head>\n\t<body></body>\n</html>',
+		exp: '<!DOCTYPE html>\n<html>\n\t<head>\n\t\t<script>\nabc  ;</script>\n\t</head>\n\t<body></body>\n</html>',
 		html: true
 	},
 	{
