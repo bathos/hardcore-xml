@@ -5,6 +5,18 @@ this point so that I could access the codebase from multiple comps.
 
 XML and HTML parsing, editing, construction and transformation library for node.
 
+```js
+hardcore.parse('<tagline>XML, The Future of Data</tagline>', opts).then(doc => {
+   const obj = doc.toObject({ rules: [ {
+      match: 'tagline',
+      coerce: String,
+      after: str => str.replace('Future', 'Mom Jeans');
+   } ] });
+
+   console.log(obj); // { tagline: 'XML, The Mom Jeans of Data' }
+});
+```
+
 <!-- MarkdownTOC autolink=true bracket=round depth=5 -->
 
 - [Purpose](#purpose)
@@ -16,18 +28,20 @@ XML and HTML parsing, editing, construction and transformation library for node.
       - [`normalize`](#normalize)
       - [`html`](#html)
       - [`target`](#target)
-   - [Parser Events in Strict and Permissive Mode](#parser-events-in-strict-and-permissive-mode)
+   - [Parser Events in Strict and Permissive Modes](#parser-events-in-strict-and-permissive-modes)
       - [Event: `error`](#event-error)
       - [Event: `warning`](#event-warning)
       - [Event: `wat`](#event-wat)
+      - [Event: `result`](#event-result)
 - [Transformation](#transformation)
    - [`toXML()`](#toxml)
    - [`toObject()`](#toobject)
       - [Premise](#premise)
       - [Main Options](#main-options)
-         - [Main Renamer](#main-renamer)
+         - [Renamer](#renamer)
       - [Default Rules](#default-rules)
-      - [Custom Rules](#custom-rules)
+      - [Custom Rules: Gist](#custom-rules-gist)
+      - [Custom Rules: Details](#custom-rules-details)
          - [`match`](#match)
          - [`rename`](#rename)
          - [`before` and `coerce`](#before-and-coerce)
@@ -36,10 +50,11 @@ XML and HTML parsing, editing, construction and transformation library for node.
          - [`asArray`](#asarray)
          - [`ignore`](#ignore)
          - [`collapse`](#collapse)
-   - [`toJSON()` and `toYAML()`](#tojson-and-toyaml)
+   - [`toJSON()`](#tojson)
    - [Renamers](#renamers)
       - [`hardcore.renamers.camel`](#hardcorerenamerscamel)
       - [`hardcore.renamers.lower`](#hardcorerenamerslower)
+      - [`hardcore.renamers.pascal`](#hardcorerenamerspascal)
       - [`hardcore.renamers.snake`](#hardcorerenamerssnake)
 - [XML](#xml)
    - [Regular Nodes](#regular-nodes)
@@ -73,15 +88,21 @@ XML and HTML parsing, editing, construction and transformation library for node.
 
 ## Purpose
 
-There are a bucnh of xml parsers / related tools for Node. I wouldn’t claim that
-Hardcore is better than any of them, but I made it because I’d never found one
-that did quite what I wanted (and then I got carried away).
+There are a bunch of good xml parsers and related tools for Node. I wouldn’t
+claim that Hardcore is better than any of them, so you should shop around a bit
+to figure out what you need.
+
+That said, I made it because I’d never found one that did quite what I wanted --
+**finely controlled** transformation to objects / json. Then I got carried away,
+so now this library may also be useful to people who need to *generate* or
+*manipulate* XML.
 
 It exposes:
 
- - A parser in the form a write stream
- - Node constructors
- - Some utilities
+ - A parser constructor (writable stream)
+ - A direct parse method (just sugar for the above)
+ - Constructors for XML / HTML nodes
+ - Some related utilities
 
 Here’s what you can do with it:
 
@@ -96,6 +117,15 @@ Here’s what you can do with it:
  - Construct XML or HTML documents node-by-node using the same building
    blocks the parser uses.
 
+The parser will return a very direct object representation of a document,
+document fragment, or external DTD. It behaves somewhat like a DOM tree: each
+node has a parent and, when applicable, an array of children (this is the only
+100% lossless way to represent XML btw). The nodes have convenience methods to
+help you navigate the tree if needed. You can convert the result, or any part of
+the result, into a nice object, json, or back to xml (prettified / normalized),
+and the transformation can be precisely defined through elaborate but powerful
+options.
+
 ### Caveats
 
 Hardcore is pretty hardcore by local standards for this sort of thing, but it’s
@@ -105,59 +135,66 @@ outside the root element is always discarded). Others are more significant even
 if obscure -- for example, at the moment, arbitrary substitution of sequences in
 DTD declarations with parameter references is usually not supported.\*
 
-Neither DTDs nor HTML were the chief reasons for Hardcore to exist, hence the
-more relaxed attitude. That said, both will be adequate for most use cases.
+As I write this, the module has only been in development for a few weeks. There
+are tests but I’m sure I haven’t thought of every significant edge case yet.
 
-As far as validation goes, what Hardcore is pretty purely interested in the
-document at a ‘grammatical’ level. Even when a DTD is present, the data within
-it is not used in any way to interpret or validate the document.
+Hardcore is so named mostly because of how deep the transformation system goes,
+but it’s also able to validate a lot at the grammatical level. That said, even
+strict mode will probably permit some technically illegal things. Better that,
+I figure, than the reverse.
 
-HTML mode is pretty cool about whatever you throw at it. Hardcore knows about
-stuff like implicit elements and tags, which tags may self-close without a
-slash, and overall document structure. On the whole it does not know, however,
-about which elements are legal as children of other elements. With HTML, the
-aim is just to parse, and any validatation is incidental to that goal.
+HTML mode is pretty cool about whatever you throw at it. Strict mode is meant
+for XML specifically so don’t use it with HTML unless it’s XHTML. Hardcore knows
+about the following HTML-specific concerns:
 
-Finally note that using this library may mean coming in close contact with XML.
-All usual safety precautions apply: use in a well-ventilated area and make sure
-a friend knows where you are. Have them check in on you occasionally. Meet in a
-public space. Do not operate heavy machinery, do not shake the baby. Hardcore
-Enterprises cannot be held responsible for emotional or physical harm caused by
-interaction with XML.
+ - Implicit opening and closing tags, e.g. `</p>` and `<tbody>`.
+ - Tags which are always self-closing and have an optional slash.
+ - High-level document structure.
 
-> \* Since this may be the one thing keeping Hardcore from being fully able to
-handle all DTD crap, I’m tempted to find a solution for it at some point, but
-these sorts of things are a pretty huge hassle since any given member, even
-members which themselves would normally be represented by objects rather than
-names, can be represented by a PR in theory.
+It does not generally know, however, about which elements are permitted to nest
+in which others. Essentially it’s only aware of the minimum necessary to handle
+the ways HTML diverges from XML, so it’s always much more permissive than a
+‘real’ HTML parser.
+
+Although DTD nodes are treated thoroughly, the DTD itself is *not interpreted*.
+It won’t have any impact on parsing, and its validation doesn’t take into
+account errors like declaring the same element twice.
+
+An important disclaimer: Hardcore Enterprises will not be held responsible for
+emotional or physical harm caused by close interaction with XML. Safety goggles,
+proper ventilation and a buddy system are all recommended. While we do our best
+to extract usable data quickly and painlessly, **the dangers of XML are very
+real and must be respected.**
+
+> \* If that means nothing to you, then you’re lucky and you don’t have anything
+to worry about. But if you’re curious, I’m referring to the fact that in a DTD,
+just about any part of any declaration can be represented by a substitution
+token called a ‘parameter reference’. Declarations that include these are
+difficult to model without actually interpreting the DTD itself, and we don’t.
 
 ## Parsing
 
-I recommend using the `Parser` constructor.
+If you’re consuming XML in node, it probably means you’re getting it from an
+external API. In this case you’ll likely want to use the constructor directly.
+It’s a writable stream, so you can pipe HTTP response bodies directly into it.
 
 ```js
 const parser = new hardcore.Parser(opts);
 
 parser.on('error', err => /* ... */);
-
 parser.on('result', doc => /* ... */)
 
-// then:
-
-someStream.pipe(parser);
-
-// or:
-
-parser.write(someXMLString);
-parser.end();
+sourceStream.pipe(parser);
 ```
 
-Note that one way or another, it needs to `end()` before it can emit a result.
-A valid document can have an arbitrary number of comments and processing
-instructions after the root element node is finished, so there’s no way to know
-a document is complete without being told so expressly.
+If you use the constructor and call `write()` directly instead of piping, you’ll
+also need to call `end()` explicitly before a result event can occur. (A valid
+document can have an arbitrary number of comments and processing instructions
+after the root element node is finished, so there’s no way to know a document is
+complete without being told so).
 
-There’s another option for parsing though:
+If your source is a single string, it will often be more expedient to use the
+`parse` method, which is just sugar over the Parser. It returns a promise:
 
 ```js
 hardcore.parse(xmlStr, opts)
@@ -173,83 +210,159 @@ hardcore.parse(xmlStr, opts, function(err, doc) {
 });
 ```
 
-When using the `parse` method instead of `Parser` directly, you lose access to
-permissive mode’s `warning` and `wat` events. The `parse` method returns a
-promise or, if you supply a callback, nothing, but it takes the same options as
-the constructor.
+There’s a catch to using the `parse` method instead of the constructor if you’re
+in loose mode. In loose mode, there may be an arbitrary number of non-terminal
+events emitted when the parser encounters malformed content that it (thinks it)
+can recover from. You won’t be able to listen for these.
+
+The options object in all cases is itself optional.
 
 ### Options
 
-First off I want to point out that at this point, we’re just talking about
-parsing. There are other options for `toObject`, `toJSON`, `toYAML`, and
-`toXML` later.
+Minor reminder: these are the options for the parser; they are unrelated to the
+options for transformation, which we’ll get to later.
 
 #### `strict`
 
-Set to `false` to enable permissive mode (more below). Defaults to `true`,
-except when `html` is true.
+Default for XML: `true`.
+Default for HTML: `false`.
+
+When enabled, strict mode expects the content to comply with XML standards and
+won’t abide errors (parsing will terminate). It will permit certain errors in
+DTDs, though, for technical reasons\*.
+
+In permissive/loose mode, many common errors will be corrected automatically.
+More serious errors will result in a node being dropped from the result, and
+some will be bad enough to halt parsing. Depending on which category the problem
+falls under, the events `warning`, `wat` and `error` will be emitted
+respectively.
+
+```xml
+<gerbils yes=100/>
+```
+
+This example has an unquoted attribute value. In strict mode, an error would be
+emitted and parsing would end. In permissive mode, there would be a warning
+event, but no real problems, since it’s obvious what was meant.
+
+\* Specifically, ‘not caring.’
 
 #### `ignoreWhite`
 
-Set to `false` to cause whitespace-only text nodes to appear in the resulting
-document. Defaults to `true`. Note that whitespace that would not be text nodes
--- that is, whitespace occuring outside the root element, or inside tags, etc --
-is never preserved, standards be damned. Always `true` if `html` is `true`, and
-effectively `true` by other means if `normalize` is true.
+Default for XML: `true`.
+Fixed for HTML: `true`.
+
+When enabled, whitespace sequences that are technically text nodes will be
+dropped from the result. This is almost always what you want. To a human there
+are only two text nodes in the following example, not seven, as XML would have
+it:
+
+```xml
+<gerbils>
+   <gerbil>
+      <name>Juniper</name>
+      <superpower>controls fire with mind</superpower>
+   </gerbil>
+</gerbils>
+```
+
+If disabled, `<gerbils>` would have three direct children: Text, Element, Text.
+
+In the XML spec, even whitespace occuring outside of Elements is supposed to be
+preserved, though they wouldn’t be text nodes in that case. We never do this,
+since it’d be a lot of hassle for something that serves literally no purpose.
+Note that whitespace that would not be text nodes.
+
+If you’re in HTML mode, this can’t be disabled, and if you have `normalize` set
+to true, it’s effectively enabled by other means.
 
 #### `normalize`
 
-Set to `true` to treat all whitespace sequences in text, comments, and CDATA as
-single spaces (u0020). When parsing HTML, an exception is made for the `<pre>`
-element even when this is on. Defaults to `false` unless `html` is `true`.
+Default for XML: `false`.
+Default for HTML: `true`.
 
-This option will also cause empty CDATA, comment and text nodes to be dropped.
+If enabled, all whitespace sequence in text, comments, and CDATA are normalized
+to a single space (\u0020). When parsing HTML, the elements `<pre>`, `<script>`,
+and `<style>` are always excepted from `normalize`.
 
-Note that this option does not preclude later output of XML with newlines for
-readability; the `pretty` option of `toXML()` provides a consistent way to take
-care of that.
+In addition, this option will cause empty text, comment, and CDATA nodes to be
+dropped from the result.
+
+Note that you shouldn’t fear using this if readable formatting is the concern.
+The `toXML()` method can output appropriate indentation, and with the `pretty`
+option active it will also add appropriate newlines to text content to create
+even, readable columns at the correct depth.
 
 #### `html`
 
-Set to `true` to parse HTML. Although well-formed XHTML will be valid as XML,
-other HTML versions are not necessarily valid as XML.
+Default: `false`.
 
-Even if you are dealing with HTML that would be valid as XML, though,
-you’ll want to use this because there are benefits after parsing; the resulting
-document will take advantage of additional knowledge about HTML to give you a
-better result, including nodes that have shorthand for accessing common
-attributes like 'id'.
+Set to `true` when parse HTML.
 
-Note that when HTML is true, `strict` is false by default. The `strict` setting
-refers to XML, so unless you know the HTML is XHTML or HTML 5 written to be XML
-compliant, it won’t make sense to have this on. In `strict` mode, valid HTML
-constructs like self-closing elements without '/' (e.g. `<input>`) will be
-errors, as will attributes without quotes or values.
+In HTML mode, Hardcore becomes aware of HTML-specific concerns like elements
+that may self-close without a slash. It also uses a different set of
+constructors to build the result tree, and these nodes will influence the
+`toXML()` output as well as provide a number of HTML-specific convenience
+methods and accessors like `id` and `removeClass`.
 
-If you parse HTML and then use `toXML()`, you will get back a result that is
-valid as XML.
 
-The HTML parsing is pretty dumb. It doesn’t know anything more about HTML than
-it needs to to compensate for the ways in which it differs from XML. Although it
-knows ‘about’ a handful of elements, it doesn’t know about things like what may
-or may not appear in a ‘p’ tag.
+```js
+const html = '<div class="poo"><p class="poo">poo!</div>';
+
+hardcore.parse(html, { html: true }).then(doc => {
+   [ ...doc.descendents() ]
+      .filter(node => node.name == 'p')
+      .forEach(node => node.removeClass('poo'));
+
+   doc.toXML();
+   // <!DOCTYPE html>
+   // <html>
+   //   <head></head>
+   //   <body>
+   //     <div class="poo">
+   //       <p>
+   //         poo!
+   //       </p>
+   //     </div>
+   //   </body>
+   // </html>
+});
+```
+
+If you’re sure you have well-formed XHTML (or HTML 5 that complies with XML,
+which is optional for that spec), you can turn on `strict` with `html`, but I
+don’t recommend it. However if you use `toXML()` the result *will* always be
+valid as XML (e.g., self-closing tags will have the optional slash).
+
+Note that the HTML parsing is -- for the most part -- not aware of which
+elements are permitted contextually. Even in strict mode, this aspect of the
+document will not be validated.
 
 #### `target`
 
-This lets you explicitly specify the type of result you expect. Valid values are
-"Document", "DoctypeExternal", "Element" or "DocumentFragment". By default, the
-parser will automatically detect whether the body being parsed is a Document or
-a DoctypeExternal, but *you can only get an Element or DocumentFragment back by
-asking for it.* Note, these values are not case sensitive, and if you prefer,
-you can also pass in the corresponding constructor instead.
+Default: `undefined`.
 
-If you do specify a target and the parsed body is not a valid example of that
-target, this will constitute an error.
+You can use `target` to explicitly specify the type of result expected. There
+are four valid values:
 
-### Parser Events in Strict and Permissive Mode
+ - Document
+ - DocumentFragment
+ - DoctypeExternal
+ - Element
+
+(These can be the literal node constructors or strings.)
+
+By default, the parser will suss out whether the xml it’s being fed is either a
+*document* or an *external DTD*. However it will never generate a fragment or an
+element unless told to do so explicitly with this option.
+
+If you do specify a target and the parsed text is not a valid example of that
+target, the parser will emit an error.
+
+### Parser Events in Strict and Permissive Modes
 
 In strict mode, if the parser hits something it thinks is invalid, it emits an
-error event and returns to its silent astral sleep realm.
+error event and quietly dies.
 
 In permissive mode, it’s still possible to get a show-stopping error, but it
 isn’t common. Instead you’ll usually get a `warning` event or a `wat` event, and
@@ -261,12 +374,13 @@ An error, regardless of mode, means that parsing has ceased. The error objects
 are fancy business -- messages are specific and they include the offending
 string when possible, with a big red shame arrow pointing at the nexus of sin.
 
+> `error: Malformed element declaration: --><!ELEMENTS booktitle (#PCDATA)>`
+
 There are two types of error -- HardcoreSyntaxError and HardcoreTypeError. The
-first is associated with ‘grammatical’ errors, especially those which prevent
-hardcore from being able to interpret what was ‘meant’. In contrast, the second
-usually occurs when the meaning of a given part is clear but nonetheless doesn’t
-constitute a valid value. The distinction isn’t exactly scientifically precise
-though.
+first is associated with errors on a ‘grammatical’ level -- structural
+malformation. In contrast, the second usually occurs when the meaning of a given
+token is clear but nonetheless doesn’t constitute a valid value in its context.
+The distinction isn’t exactly scientifically precise though.
 
 #### Event: `warning`
 
@@ -288,25 +402,29 @@ amounts to ignoring an entire node, or a part of one (like a malformed
 attribute). A wat could even mean there are unbalanced element tags -- this,
 too, can sometimes be ‘corrected’ using the same sort of logic a browser might
 when dealing with malformed HTML, but that doesn’t mean the output will match
-your expectations, so be wary. Internally, permissive mode is called ‘sloppy’
-mode for a reason.
+your expectations, so you might choose to allow warnings but abort on a wat.
+
+#### Event: `result`
+
+Assuming there was no error and the stream has ended, you’ll get a `result`. The
+object passed to the event handler is the resulting node tree (typically, a
+Document).
 
 ## Transformation
 
-Every node, plus every ‘children’ type property, possesses these methods:
+Every node possesses these methods:
 
  - `toXML()`
  - `toObject()`
  - `toJSON()`
- - `toYAML()`
 
-The `toXML` method is the same as `toString`, btw -- so when coerced to string,
+The `toXML` method is an alias for `toString`, btw -- so when coerced to string,
 any node will become XML again.
 
 ### `toXML()`
 
 Returns a representation of the node and all its decendents as XML. It can take
-an optional options object with the following properties:
+an options object with the following properties:
 
  - `withNS`: Set to `false` to strip namespace prefixes. Default is `true`.
  - `quote`: Can be the string `'` or `"` (default). This sets the preferred
@@ -342,49 +460,59 @@ despite the name of the former.
 
 ### `toObject()`
 
-The `toObject` method was the main point of hardcore to begin with. Although you
-could use it with the default settings, you’re probably going to want to do some
-configuration -- and that configuration goes a bit deeper than what you’d
-usually put into an ‘options’ object, so I want to give some background on what
-the point of all this is, first. Skip this section if you already know why 
-working with XML data is a radioactive hellscape.
+This is the core method in hardcore: take your parsed XML and transform it into
+a (possibly very different) consumable data structure.
+
+Given a set of *rules*, `toObject()` builds a new object by applying the first
+matching rule to each node in a specific sequence. There’s a lot to describe
+here, so before we go on I want to provide a little background about why it
+isn’t ‘simple’. Skip this section if you are already painfully aware of the ways
+in which XML is a radioactive hellscape.
 
 #### Premise
 
 Superficially, XML appears to be some kind of ... data ... format ... thing. And
 you’d think, hey, it’s probably pretty simple to *translate* it, following
-consistent principles, into usable objects (and thus, JSON and YAML, too). Of
-course, it is possible to represent XML as objects -- that’s exactly what the
-parser does, or the DOM for that matter. But that’s not really what you meant.
+consistent principles, into usable objects (and thus JSON too). Of course, it is
+possible to represent XML as objects -- that’s exactly what the parser does, or
+the DOM for that matter. But that’s not really what you meant.
 
 Given the XML `<a><b>xyz</b></a>`, you might picture an object representation
-like this: `{ a: { b: 'xyz' } }`. Mmm. Yes, that *would* appear to make sense,
-wouldn’t it? Unfortunately, that is definitely not what that XML translates to.
+like this: `{ a: { b: 'xyz' } }`. That’s intuitive -- but on the other hand,
+it’s much further removed from the *real* translation of the XML than it may
+appear.
 
-The most minimal lossless translation of the above ‘simple’ XML into objects
-would need to look something like this:
+Even if we’re only concerned with elements, a very minimal but lossless
+translation of the above ‘simple’ XML into an objects representation would need
+to look something like this:
 
 ```js
 { a: [ { b: [ 'xyz' ] } ] }
 ```
 
-That doesn’t even account for attributes. Well, to be fair, in JS, an array may
-possess arbitrary properties, and given that the set of legal XML attribute
-names wouldn’t conflict with array indices, you could get away with the above.
-But it wouldn’t cut it for JSON and YAML, which would require yet another tier
-for every node.
+But does that even really cover it? It doesn’t account for attributes. Although
+you could get away with assigning them to the arrays themselves in JS, that’s a
+bit sneaky and besides, it wouldn’t work with JSON or YAML. So really the
+representation would need to be still more complex:
 
-What if we make some assumptions?
+```js
+{ a: { $attr: [], $children: [ { b: { $attr: [], $children: [ 'xyz' ] } } ] } }
+```
 
-1. Assume: node sequence is not meaningful
+Really, this is where you’re starting from. That’s very close to being a vanilla
+representation of the original tree produced by the parser.
 
-Given that statement, we could safely produce this:
+So what we need to begin with is some assumptions. We need to say ‘this or that
+part of the data is actually not meaningful.’ It will no longer be possible to
+map the data *back* to XML, but we don’t care.
+
+1. Assume node sequence is not meaningful
+
+Given this assumption, we can generate something like this:
 
 ```js
 { a: { b: { $text: 'xyz' } } }
 ```
-
-But we’re still not there ... we need to go further.
 
 2. An element whose only children are text nodes can be represented *as* that
    text.
@@ -393,29 +521,33 @@ But we’re still not there ... we need to go further.
 { a: { b: 'xyz' } }
 ```
 
-There we go. Nice! OH WAIT, we just got a new document from the same source, but
-it looks like *this*
+There we go. Nice! That’s what you’d get back from `toObject()` with no custom
+rules, by the way. Maybe you don’t need custom rules after all!
+
+Oh -- hold up a second. We just got a new document from the same source. I
+wonder what it looks like?
 
 ```xml
 <a><b>xyz</b><b xmlsucks="omg yes it does">abc</b></a>
 ```
 
-Hahahahahaaaaa aaha ha hhhaaa xmmmllll
+Hahahahahaaaaa aaha ha hhhaaa ha! HA! ha! xmmmllll eks emm elllll
 
-Okay, you get the idea. There is *no way* for this process to be simple. And
-categorical assumptions only get us so far when it comes to complex documents
-where, say, sequence usually doesn’t matter, except for in this one element... 
+Okay, you get the idea. There is *no way* for this process to be simple. We can
+make categorical assumptions, but they only get us so far because knowledge of
+the possible document structure is required to generate consistent results.
+Sometimes sequence does matter. Sometimes an element has mixed content.
+Sometimes a node can appear more than once as siblings. Etc.
 
 In the past, I dealt with this sort of translation from XML into usable data by
 taking pieces bit by bit and constructing the real object. For larger docs with
 complex requirements, the code that this leads to is not only painfully verbose,
 it also inevitably turns into imperative spaghetti very quickly.
 
-What hardcore offers is a more-or-less declarative system based on defining
-rules for how nodes will be interpreted. Each rule has a `match`, which
-determines whether it applies, and in addition may have other options that tweak
-the output in small or large ways. It’s like a javascript DTD that is hopefully
-not as horrible as that sounds now that I put it like that...
+Hardcore’s rule-based system is a more-or-less declarative system meant to let
+you avoid that. Each rule has a `match`, which determines whether it applies,
+and in addition it may have other options that tweak the output in small or
+large ways.
 
 #### Main Options
 
@@ -424,37 +556,47 @@ The main options object passed to `toObject` can have these properties:
  - `rules`: An array of rules declaring how the XML will be processed.
  - `renamer`: A function, object hash, or map for renaming nodes.
  - `withNS`: Boolean (‘with namespaces’). Defaults to `false`. This will affect
-   not only how names appear but also how rules that match on names behave.
+   not only how names appear, but also how rules that match on names behave.
 
-##### Main Renamer
+##### Renamer
 
-Individual rules can override the main renamer -- this is just the fallback when
-nothing else was specifically applied.
+Default: `hardcore.renamers.camel`.
+
+The renamer supplied on the options object is the fallback used when a rule
+doesn’t explicitly assign a new name. Either way what we’re talking about is
+mapping the names of nodes -- usually Elements and Attributes -- to property
+names on their parents.
 
 If set to `undefined`, the original names will be used, but by default, names
-get converted to (acronym-aware) camelcase. You can write a custom renaming
-function or use one of the other built-in options from `hardcore.renamers`.
+get converted to camelcase. There are more built-in options to be found at
+`hardcore.renamers` -- or you can write a custom function of your own.
 
-An alternative to supplying a function is to supply an object hash
-(`{ oldName: newName }`) or map. 
+Instead of a function, you can also supply an object hash or map, where the keys
+are the original names and the values are the new names.
 
-Note that not all nodes have names to begin with. Nameless nodes instead get as
-their original names generics like '$comment'. These are collision safe since $
-cannot start a real XML name.
+Note that nodes that don’t have ‘names’ are given generic names like '$comment'.
+The dollar-sign is for collision safety (a real XML name can’t have one) and
+clarity. These nodes can be renamed the same way.
 
 #### Default Rules
 
-In the absence of any applicable custom rules, there are defaults which apply.
-These favor the production of the most *minimal* rather than the most
-*consistent* result. By default, order is not preserved (unless you count
-property order, which I suppose you can as long as the data remains in V8) and
-comments, as well as DTDs and ‘exotic’ nodes like ProcessingInstruction, are
-ignored.
+In the absence of any applicable custom rules, the default transformation that
+gets applied favors the most *minimal* output rather than the *safest* output.
+Since these minimal results are what you want 75% of the time, it makes sense as
+the starting point against which we’re writing rules that diverge.
 
-While this production makes sense for the bulk of any given ‘normal’ document,
-there will almost always be nodes that need special handling, which is the
-reason custom rules exist. The most common reason to write a rule is to define
-certain Elements as being *plural*. Consider the following case:
+ - Order is not preserved
+ - Comments, processing instructions, and all DTD nodes are ignored
+ - ‘Meta’ document properties are omitted
+ - Nodes that contain only text become that text
+ - Nodes with no real content are omitted
+
+#### Custom Rules: Gist
+
+While the default production makes sense for the bulk of any given ‘normal’
+document, if you don’t supplement it with custom rules, you’ll inevitably run
+into problems. The most common problem concerns *plurality* of elements.
+Consider the following case:
 
 ```xml
 <litter>
@@ -477,14 +619,13 @@ The result of a `toObject` transformation with no custom rules would be this:
 }
 ```
 
-The default rules favored the most minimal result by assuming that if there was
-only one element of a given name, and that node contains only text, then it
-should result in a property whose value is that text. But this sucks, because
-now we have an inconsistent type for `cat`. First it’s a string and then it’s
-an array. To use the data we’d need to fumble with type/instance checking and
-guards: it’s just a reconfiguration of the same old XML problems.
+The default production saw that litter needed to be an array because it appeared
+twice. It saw the same was true for 'cat' -- but only in the second case. So now
+we have inconsistency: if 'cat' can appear one-or-more times, we need to say
+explicitly that it should *always* be an array, or else we’d have to use type
+checks and guards just to look at the data.
 
-So a good set of options in this case might look like this:
+A good set of options in this case might look like this:
 
 ```js
 const opts = {
@@ -506,7 +647,7 @@ const opts = {
 
 I think that’s a good illustration of what the point of all this blathering is.
 
-#### Custom Rules
+#### Custom Rules: Details
 
 Each rule in `rules` is an object that describes a match and one or more
 optional behaviors.
@@ -784,21 +925,20 @@ on ignore-collapse where names work differently. Note however that to use this
 functionality means that if the targetted child node had siblings, they would be
 omitted from the result.
 
-### `toJSON()` and `toYAML()`
+### `toJSON()`
 
-The options for these include all of the options for `toObject` with these
-differences and additions:
+This is just sugar for toObject + JSON.stringify. In addition to the toObject
+options, there’s:
 
- - `asComment`: An extra filtered transform. Nodes matching will be included in
-   the output as comments. Note that JSON technically does not allow comments,
-   though many implementations permit them anyway. Default for YAML:
-   `[ Comment ]`. Default for JSON: `undefined`.
- - `quote`: This is only applicable for `toYAML`. The value can be a single
-   quote, a double quote, an empty string, or one of the YAML string block
-   prefixes. If undefined, but `pretty` is true, then no-quotes will be favored,
-   but when necessary, or when the string is long, '>-' will be used.
- - `tab`: This is only applicable for `toJSON`. As with `toXML`, it’s the indent
-   string. Defaults to `'\t'`.
+ - `tab`: The indentation string.
+
+I wanted to throw in toYAML, but given the existing solutions on NPM and their
+size, it seemed more sensible to leave including that up to the user if they
+need it. The package 'yamljs' seems like the best bet, so you can just convert
+to object and then apply that module’s `stringify` method. The only lame bit is
+that even though YAML supports comments, if you wanted to include them you’d
+need to do it with an extra step (for example you’d define an appropriate rule
+for toObject and then do a corresponding replace on the YAML string at the end).
 
 ### Renamers
 
@@ -819,6 +959,12 @@ this context, like ‘ID’ and ‘URL’. Numbers with decimals are also handle
 #### `hardcore.renamers.lower`
 
 Entirely to lowercase.
+
+#### `hardcore.renamers.pascal`
+
+Simply camel with the first character uppercase. It is a grave sin to use this
+case in JS for non-constructors, but perhaps the data is to be consumed
+elsewhere.
 
 #### `hardcore.renamers.snake`
 
@@ -856,7 +1002,7 @@ All of the node constructors that take arguments take them as an options-type
 object as seen in the above examples. However, nodes that only have one property
 of note will accept a string instead, like `new Text('my content')`.
 
-All nodes have `toObject`, `toJSON`, `toYAML` and `toXML` methods, which are
+All nodes have `toObject`, `toJSON` and `toXML` methods, which are
 detailed in the transformation section above. Note that `toXML` aliases
 `toString` which is the ‘real’ `toXML` method. They also all possess an
 `isValid` method that returns a Boolean. For many nodes, this will always return
@@ -918,7 +1064,6 @@ Recap time. All nodes have:
  - `toJSON()`
  - `toObject()`
  - `toXML()` / `toString()`
- - `toYAML()`
 
 And nodes which have the `children` property also all have:
 
