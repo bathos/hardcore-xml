@@ -1,7 +1,7 @@
 {
   "name": "hardcore-xml",
   "version": "0.0.1",
-  "description": "xml parser as writable stream",
+  "description": "xml/html parser, transformer, and creator",
   "main": "lib/index.js",
   "scripts": {
     "build": "gobble build lib --force",

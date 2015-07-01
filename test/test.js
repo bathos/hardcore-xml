@@ -50,9 +50,9 @@ function parseTest(t, opts) {
 			t.pass(msg);
 		else {
 			res = res
-				.replace(/\t/g, '[TAB]')
-				.replace(/\n/g, '[NL]')
-				.replace(/ /g, '[SP]');
+				.replace(/\t/g, '[T]')
+				.replace(/\n/g, '[N]')
+				.replace(/ /g, '[S]');
 
 			t.fail(msg + ' (unexpected output: ' + res + ')');
 		}

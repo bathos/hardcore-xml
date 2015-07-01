@@ -1,5 +1,8 @@
-> WORK IN PROGRESS. This isn’t done yet -- I just needed to get it up here at
-this point so that I could access the codebase from multiple comps.
+[![Build Status](https://travis-ci.org/bathos/hardcore-xml.svg)](https://travis-ci.org/bathos/hardcore-xml)
+
+> This is pretty new. It’s passing the first round of tests, but there’s still
+a lot more I should write and there are probably still bugs at this stage. Not
+recommended for serious use yet.
 
 # hardcore
 
@@ -40,8 +43,8 @@ hardcore.parse('<tagline>XML, The Future of Data</tagline>', opts).then(doc => {
       - [Main Options](#main-options)
          - [Renamer](#renamer)
       - [Default Rules](#default-rules)
-      - [Custom Rules: Gist](#custom-rules-gist)
-      - [Custom Rules: Details](#custom-rules-details)
+      - [Custom Rules (Overview)](#custom-rules-overview)
+      - [Custom Rules](#custom-rules)
          - [`match`](#match)
          - [`rename`](#rename)
          - [`before` and `coerce`](#before-and-coerce)
@@ -56,15 +59,19 @@ hardcore.parse('<tagline>XML, The Future of Data</tagline>', opts).then(doc => {
       - [`hardcore.renamers.lower`](#hardcorerenamerslower)
       - [`hardcore.renamers.pascal`](#hardcorerenamerspascal)
       - [`hardcore.renamers.snake`](#hardcorerenamerssnake)
-- [XML](#xml)
+- [XML Nodes](#xml-nodes)
+   - [Common Node Methods & Properties](#common-node-methods--properties)
+      - [Transformation](#transformation-1)
+      - [Relationships](#relationships)
+      - [Validation](#validation)
    - [Regular Nodes](#regular-nodes)
       - [`hardcore.nodes.Document`](#hardcorenodesdocument)
       - [`hardcore.nodes.Element`](#hardcorenodeselement)
       - [`hardcore.nodes.Attribute`](#hardcorenodesattribute)
       - [`hardcore.nodes.Comment`](#hardcorenodescomment)
       - [`hardcore.nodes.Text`](#hardcorenodestext)
-      - [`hardcore.nodes.ProcessingInstruction`](#hardcorenodesprocessinginstruction)
       - [`hardcore.nodes.CDATASection`](#hardcorenodescdatasection)
+      - [`hardcore.nodes.ProcessingInstruction`](#hardcorenodesprocessinginstruction)
       - [Bonus node: `hardcore.nodes.DocumentFragment`](#bonus-node-hardcorenodesdocumentfragment)
    - [DTD Nodes](#dtd-nodes)
       - [`hardcore.nodes.Doctype`](#hardcorenodesdoctype)
@@ -591,7 +598,7 @@ the starting point against which we’re writing rules that diverge.
  - Nodes that contain only text become that text
  - Nodes with no real content are omitted
 
-#### Custom Rules: Gist
+#### Custom Rules (Overview)
 
 While the default production makes sense for the bulk of any given ‘normal’
 document, if you don’t supplement it with custom rules, you’ll inevitably run
@@ -647,7 +654,62 @@ const opts = {
 
 I think that’s a good illustration of what the point of all this blathering is.
 
-#### Custom Rules: Details
+To write rules, it helps to understand the sequence in which they’ll be applied.
+Consider this example:
+
+```xml
+<elemR>
+   <elemA attr="true">
+      <elemB>abc</elemB>
+      <elemC>def</elemC>
+   </elemA>
+</elemR>
+```
+
+Initially, `toObject` walks the tree starting from the node you called the
+method on, working its way down each path from top to bottom, left to right. A
+representation of each node is created. By default, these representations -- the
+‘base value’ -- will always be objects or strings, but you can generate a custom
+base value via a rule’s `before` option. In this phase, `ignore` and `collapse`
+options are also applied and the node’s new name, if any, will be determined.
+
+<pre>
+                                     (obj) <------ type: Document
+                                       |
+                                     (obj) <------ type: Element, name: elemR
+                                       |
+                                     (obj) <------ type: Element, name: elemA
+                                    /  |  \
+type: Attribute, name: attr --> (str)(obj)(obj) <- type: Element, name: elemC
+                                       |    |
+                                     (str)(str) <- type: Text, name: '$text'
+</pre>
+
+When a leaf node is reached, the transformer begins walking backwards. When each
+node is encountered for the second time (unless it was ignored), it may have a
+rule’s `after` function applied, and then it gets linked to its parent as a
+property or member as appropriate.
+
+The sequence will be familiar if you’ve ever used a sax parser. In a sense,
+hardcore’s `toObject` works a lot like a souped up, specialized sax parser. This
+is the walk sequence for the above document:
+
+ 01. before elemR
+ 02. before elemA
+ 03. before attr
+ 04. after attr
+ 05. before elemB
+ 06. before *abc*
+ 07. after *abc*
+ 08. after elemB
+ 09. before elemC
+ 10. before *def*
+ 11. after *def*
+ 12. after elemC
+ 13. after elemA
+ 14. after elemR
+
+#### Custom Rules
 
 Each rule in `rules` is an object that describes a match and one or more
 optional behaviors.
@@ -674,65 +736,13 @@ optional behaviors.
    several’ while ‘asArray’ says ‘the sequence of my children matters so I
    cannot be mapped to a concise object.’
 
-To write rules, you’ll need to understand how they get applied. Consider this
-example document:
 
-```xml
-<elemR>
-   <elemA attr="true">
-      <elemB>abc</elemB>
-      <elemC>def</elemC>
-   </elemA>
-</elemR>
-```
-
-Initially, `toObject` walks the tree starting from the node you called the
-method on, working its way down each path from top to bottom, left to right. A
-representation of each node is created; by default, these will always be objects
-or strings, but you can control the ‘base’ value using `before`. In this phase,
-the `ignore` and `collapse` options are also applied and the node’s new name, if
-any, will be determined.
-
-<pre>
-                                     (obj) <------ type: Document
-                                       |
-                                     (obj) <------ type: Element, name: elemR
-                                       |
-                                     (obj) <------ type: Element, name: elemA
-                                    /  |  \
-type: Attribute, name: attr --> (str)(obj)(obj) <- type: Element, name: elemC
-                                       |    |
-                                     (str)(str) <- type: Text, name: '$text'
-</pre>
-
-At each ‘leaf’ it begins walking backwards, linking the new node values to their
-parents (possibly their *new* parents, if you used `collapse`), taking into
-account `plural`, and finally applying `after` if present.
-
-The sequence will be familiar if you’ve ever used a sax parser. In a sense,
-hardcore’s `toObject` works a lot like a souped up, specialized sax parser. This
-is the walk sequence for the above document:
-
- 01. bf. elemR
- 02. bf. elemA
- 03. bf. attr
- 04. af. attr
- 05. bf. elemB
- 06. bf. *abc*
- 07. af. *abc*
- 08. af. elemB
- 09. bf. elemC
- 10. bf. *def*
- 11. af. *def*
- 12. af. elemC
- 13. af. elemA
- 14. af. elemR
 
 ##### `match`
 
 This is the only required property for a rule. There are four types of matches.
 More specific matches must come before more generic matches, because only the
-earliest matching rule will be applied.
+earliest matching rule will be applied.\*
 
  - **Name / key matches**
    - String: `'name'`
@@ -766,17 +776,25 @@ wanted to generate a ‘meta’ object describing the document structure).
 Note that the three HTMLElement nodes all inherit from Element and thus may be
 matched with it; likewise Attribute is inclusive of HTMLAttribute.
 
+> \* This constraint -- that only the first matching rule applies -- is
+something I might tweak in the future via an additional option. I’m not sure if
+it’s needed yet, but it would potentially be nice to be able to say a rule has a
+‘passthrough’ property. If it did, should it build a composite rule favoring the
+first explicitly defined option, or should it apply them in succession, the way
+`before` and `coerce` work?
+
 ##### `rename`
 
-This can be a string or a function that returns a string. If it’s a function,
-its arguments are the original name and the node. If present, `rename` overrides
-the `opts.renamer` function if it was supplied.
+This can be either a string or a function that returns a string. If it’s a
+function, its arguments are the original name and the node. If present, `rename`
+overrides the main `opts.renamer`.
 
 ##### `before` and `coerce`
 
 The `before` function receives the original Node and whatever *would* be its
-generic representation (baseVal). It returns a value which will represent this
-node in the result object. It’s fine to just mutate the baseVal and return that.
+generic representation (baseVal below). It returns a value which will represent
+this node in the result object. It’s fine to just mutate the given baseVal and
+return that.
 
 ```js
 function before(node, baseVal) { /* ... */ }
@@ -785,10 +803,11 @@ function before(node, baseVal) { /* ... */ }
 The baseVal of a node is always an object (e.g. Element) or a string (e.g.
 Text, Attribute). If you return a primitive, but the node has children, the
 children will end up being ignored unless `collapse` was true (because otherwise
-they no longer have anything to get attached to)
+they no longer have anything to get attached to). For our purposes, `Date` 
+instances are treated as if they were primitive.
 
 There is one special case, `undefined`. Returning `undefined` will cause the
-node to be ignored. Indeed, this is what `ignore` is really shorthand for.
+node to be ignored.
 
 While Element’s baseVal is a generic empty object, more exotic nodes come with
 properties already attached. For example, if you choose to include processing
@@ -808,10 +827,12 @@ use both. If both are defined, the coercion will occur first; therefore `before`
 will receive the result of the coercion as its second argument. This is quite
 useful when using `coerce: String`.
 
-Depending on the node type, coerce behaves a bit differently. For nodes with a
-string baseVal, like Attribute, the string value will simply be cast to the new
-type. But if the baseVal is not a sting, the textual content of the node’s
-immediate children is what will get cast.
+Depending on the node type, coerce’s exact behavior changes. In all cases, what
+`coerce` is interested in is text content. For nodes like Attribute, whose base
+value is already a string, this may be as simple as `new Date(baseVal)`. For
+object nodes, however, coerce takes the total text content of the node’s
+*immediate* children as the value to be cast (this is why String, which would
+be redundant in the former case, is one of the options).
 
 ```xml
 <cat name="Spottis" age="12">
@@ -822,64 +843,72 @@ immediate children is what will get cast.
 
 ```js
 const rules = [
-   { match: [ Attribute, 'age' ], coerce: Number },
-   { match: [ Element, 'adorableness' ], coerce: Boolean },
-   { match: [ Element, 'fur' ], coerce: String }
-   { match: [ Element, 'cat' ], collapse: true }
+   { match: [ 'age' ], coerce: Number },
+   { match: [ 'cat' ], collapse: true },
+   { match: [ 'fur' ], coerce: String, before: (node, val) => val.toUpperCase() },
+   { match: [ 'perfect' ], coerce: Boolean }
 ];
 
 // ...
 
-{ name: 'Spottis', age: 12, perfect: true, fur: 'white / black' }
+{ name: 'Spottis', age: 12, perfect: true, fur: 'WHITE / BLACK' }
 ```
 
-The Boolean coercion recognizes common analogue values like ‘yes’ and ‘N’.
+The Boolean coercion recognizes common analogue values like ‘yes’ and ‘N’. Date,
+however, expects strings that will work with native Date parsing; if you need to
+convert more specialized date strings, coerce to String and use `before`.
 
 ##### `after` and `afterPlural`
 
-After children are processed (and attached to the baseVal as properties, if
-applicable), the `after` function will be called. It receives the assembled
-object or value and may return a new value. The return value will supplant the
-former value. Unlike `before`, returning `undefined` will be taken literally in
-this phase.
+After the `before` phase, any children of the node will also be processed. When
+applicable, they’ll be attached to the object made previously, typically as
+properties.
 
-The `transform` function also receives the original node and the name:
+Once all children are complete, we return to the node/new value pair. At this
+point `after` will be applied if provided. This lets you perform further custom
+transformation, this time taking into account child properties.
+
+The `after` function receives as its arguments the created object, the original
+node, and the name it will have. The return value will supplant the former
+value. Returning `undefined` will be taken literally in this phase.
 
 `function after(val, node, name) {}`
 
-This is the most powerful tool at your disposal, because this is the best time
-to perform more aggressive manipulations of the result object’s structure.
-Rather than being limited to ignoring or collapsing a node, you can completely
-alter the object at any branch. Most users will not need this much. It invites
-some of the imperative logic we’re trying to get away from, but sometimes when
-dealing with complex documents, that can’t be avoided. At least this lets us
-keep things well-organized.
+This is the powertool of rule options. You can use it to perform any kind of
+aggressive manipulation, including making significant changes to the data
+structure, because at this point you’re dealing with what would be the final
+result for this node and its descendents.
+
+Most users won’t need it much. It invites some of the imperative logic we’re
+trying to get away from after all. But sometimes you’re dealing with complex
+documents with poor data structures and it can’t be avoided. At least `after`
+lets us keep things well-organized.
 
 An `afterPlural` function, if provided, is the same, but gets called with the
 resulting array as its value. This special ‘after’ is included because the
 `after` of a plural rule applies to the individual array members (which map
 back to nodes) rather than the resulting collective array. Its primary use cases
-would be to sort, filter, or reduce.
+would be to sort, filter, or reduce a plural node.
 
 ##### `plural`
 
-If `plural` is true, the node will be treated as an array member. Depending on
-what you’re aiming for, this may be the only option you really need. By default,
-a node will only become an array member if it has siblings of the same name.
-This can lead to problems when a node *may or may not* have such siblings,
-since you want to have a consistent result regardless.
-
-You can also set `plural` explicitly to `false`. If you do, it will never be an
-array and if there are same-name siblings, the last one will overwrite any
-previous.
+If `plural` is true, the node will be treated as an array member. For many users
+this could be the only option you need; it’s certainly the most common. By
+default, a node will only become an array member if it has siblings of the same
+name. This can lead to problems when a node *may or may not* have such siblings,
+since you want to have a consistent result regardless. By setting `plural` to
+`true`, you’ve indicated that the result should always be an array.
 
 ##### `asArray`
 
-With `asArray`, a node will be represented as an array of its children.
-Therefore this option only makes sense when applied to nodes that have children
-in the first place. Most users won’t need it, but when it is needed it’s
-critical (e.g. HTML) because it allows child sequence to be explicitly
-preserved. The tradeoff is significantly more verbose, difficult to use output.
+With `asArray`, a node will be represented as an array of its children. The
+distinction between this and `plural` is important. You use `asArray` to ensure
+that all children of a given node are maintained as a sequence; same-name
+children will not be merged since each will belong to a unique member object.
+
+Since this produces significantly more verbose, difficult output, you should
+only use it in contexts where overall child node sequence is critical data, like
+in mixed text markup such as HTML.
 
 ##### `ignore`
 
@@ -894,6 +923,9 @@ node’s parent. There are two common cases for this:
 
  - The node is ignored but its children should not be.
  - The node is to become a primitive value, and therefore cannot carry children.
+
+If a node’s collapse causes it to have no content, it will end up being ignored,
+so you don’t actually need to set both:
 
 ```xml
 <cats><cat>maru</cat><cat>spooky</cat></cats>
@@ -918,27 +950,28 @@ const rules = [ { match: 'cats', collapse: 'cat' } ];
 { cats: [ 'maru', 'spooky' ] }
 ```
 
-The targetted child becomes the value of the parent, replacing it but assuming
-its name. This is useful in cases where a document has an unnecessarily complex
-hierarchy, which is a common problem in XML. Effectively it’s just a variation
-on ignore-collapse where names work differently. Note however that to use this
-functionality means that if the targetted child node had siblings, they would be
-omitted from the result.
+The key differences here are that the targetted child ends up taking on the name
+of the parent, and while the parent is implicitly ignored, as before, so are the
+other children.
+
+This is most useful in cases where a document has an unnecessarily complex
+hierarchy -- redundant structures like `<bees><bee>1</bee><bee>2</bee></bees>`
+are beloved in XML, but without collapsing, their direct translation is nearly
+incoherent: `{ bees: { bee: [ '1', '2' ] } }`.
 
 ### `toJSON()`
 
-This is just sugar for toObject + JSON.stringify. In addition to the toObject
-options, there’s:
+This is just sugar for toObject + JSON.stringify, so it has the same options as
+`toObject`, plus:
 
  - `tab`: The indentation string.
 
 I wanted to throw in toYAML, but given the existing solutions on NPM and their
 size, it seemed more sensible to leave including that up to the user if they
 need it. The package 'yamljs' seems like the best bet, so you can just convert
-to object and then apply that module’s `stringify` method. The only lame bit is
-that even though YAML supports comments, if you wanted to include them you’d
-need to do it with an extra step (for example you’d define an appropriate rule
-for toObject and then do a corresponding replace on the YAML string at the end).
+to object and then apply that module’s `stringify` method. The only catch is
+that while YAML supports comments, to include them properly you’d need to do
+some extra somersaults.
 
 ### Renamers
 
@@ -953,8 +986,8 @@ linter complaints aside, these are legal as literal property names).
 Standard JS-style camelcase. Common acronyms are handled intelligently (e.g.
 'ID' => 'id', but 'CatId' => 'catID'). The acronym list is hardly comprehensive
 (I mean, it can’t be, really) but I tried to cover stuff likely to appear in
-this context, like ‘ID’ and ‘URL’. Numbers with decimals are also handled:
-'xyz\_1.2' => 'xyz1\_2'
+this context, like ‘ID’ and ‘URL’. Numbers with decimals are given special
+treatment, too: 'xyz\_1.2' => 'xyz1\_2'
 
 #### `hardcore.renamers.lower`
 
@@ -962,9 +995,7 @@ Entirely to lowercase.
 
 #### `hardcore.renamers.pascal`
 
-Simply camel with the first character uppercase. It is a grave sin to use this
-case in JS for non-constructors, but perhaps the data is to be consumed
-elsewhere.
+Constructor case in JS land. Simply camel with the first character uppercase.
 
 #### `hardcore.renamers.snake`
 
@@ -972,16 +1003,17 @@ Snake case -- lowercase with underscores between words. Studies have shown that
 users of snake case are 0.7% more likely to quote statistics about reading speed
 and identifier naming.
 
-## XML
+## XML Nodes
 
-All of the XML node constructors are exposed at `hardcore.nodes`. You can use them
-to construct documents (or document snippets) ‘by hand’ or in the course of
-modifying a previously parsed document (e.g. inserting some new elements).
+APIs that send XML often take XML, too. The node constructors are all exposed at
+`hardcore.nodes`. You can use them to construct documents from scratch or to
+augment documents after parsing, then call `toXML()` (nice for update
+operations).
 
-Validation is still a concern here. Hardcore really isn’t interested in creating
-anything but valid documents. It will coerce values though -- that is, it will
-perform many of the same adjustments that are performed in permissive parsing
-mode. For example:
+When constructing nodes or generating XML, there’s still a fair amount of
+validation behind the scenes, and if you try to do certain illegal stuff, it
+will throw. But it’s effectively always in loose mode and will fix a lot of
+stuff automatically:
 
 ```js
 const elem = new hardcore.nodes.Element({ name: 'pizza' });
@@ -991,107 +1023,126 @@ elem.setAttribute({ key: 'toppings', value: 'anchovies & olives' });
 elem.toXML(); // => <pizza toppings="anchovies &amp; olives" />
 ```
 
-That also shows an example of one of a convenience method on `Element` -- its
-`setAttribute` method is shorthand here for:
+Many nodes have methods to make document editing and constuction a little
+easier. In the example above, we make use of Element’s `setAttribute()` method,
+which (given that there wasn’t already a "toppings" attribute) could have been
+done like this instead:
 
 ```js
 elem.attributes.push(new hardcore.nodes.Attribute({ /* ... */ }));
 ```
 
-All of the node constructors that take arguments take them as an options-type
-object as seen in the above examples. However, nodes that only have one property
-of note will accept a string instead, like `new Text('my content')`.
+Each of the node constructors takes an options object at instantiation. Despite
+the terminology, these are often *not optional*. You cannot create an Element
+without a name, for example.
 
-All nodes have `toObject`, `toJSON` and `toXML` methods, which are
-detailed in the transformation section above. Note that `toXML` aliases
-`toString` which is the ‘real’ `toXML` method. They also all possess an
-`isValid` method that returns a Boolean. For many nodes, this will always return
-`true` because it isn’t possible to ever put them in an invalid state. But
-others can become invalid because their properties may have more complex
-relationship requirements (this is usually the DTD nodes).
+Nodes like Text and Comment only have one real property of note, `content`. For
+these, a string is acceptable instead of an object: `new Text('my content')`.
 
-An important note about `isValid` is that it only confirms the validity of
-*that* node. It will tell you if the children are valid *in their relationship
-to that node*, but not if all children are individually valid nodes themselves.
-Thus an `ElementDeclaration` will be invalid if it has the `type` "ANY" but also
-has `contentSpec` children -- but it will not be invalid just because one of its
-`contentSpec` children is malformed somehow.
+### Common Node Methods & Properties
 
-Nodes may have context. A number of nodes have `children` properties which are
-array-like containers for other nodes / components -- this and its variants are
-detailed in the node-by-node sections below. But nodes also have a `parent`
-property, a `parents` property, and a `lineage()` method. The first returns the
-immediate parent; the second returns an array of all parents, from farthest to
-nearest; and the third returns the iterable that underlies `parents` but it’s
-inclusive of the node itself. These properties and methods make it easy to loop
-over a node "path" and allow you to do things like `node.parents.find()`.
+#### Transformation
 
-There is also a `siblings` property, which returns an array of the node’s
-siblings (that is, its immediate parent’s children, but not including itself).
+As described in the transformation section, all nodes (as well as all ‘children’
+properties -- we’ll get to that) have `toObject`, `toJSON` and `toXML`. You
+don’t need to call these from the document root; you can transform any subset of
+the tree.
 
-Going the other direction doesn’t play nice with iteration, of course, since a
-parent may have multiple children. There are some helpers, but you’ll probably
-still need to handle this on a case-by-case basis more often than not. The first
-aide is `descendents()`, another generator like `lineage()`. It yields nodes
-except "not really a node" nodes like attributes, working from nearest to
-farthest -- more or less, since one’s definition of that may vary. First you get
-immediate children, then the immediate children of the first immediate child,
-the second, and so on; then the third generation stemming from these, etc. The
-second method is `findNearestDescendent()`, which accepts a predicate function
-and returns the nearest match according to the same logic given above.
+The other method to note here is `clone()`, which can be used to create an
+identical node (including cloned descendents). This is needed because a given
+node can’t occupy two positions at once; there can only be one parent at a time.
 
-Note that parent-child relationships are created and updated automatically,
-which is one of the reasons `children` properties are ‘array-like’ rather than
-actual arrays (until we get Proxy anyway!). That said, I’m pretty sure that if
-you’re sufficiently determined you can probably break them :/
-
-Nodes also all possess the `remove()` method which slices them out of their
-parent, if applicable, and returns them. A given node cannot be in two places
-at once, so assigning a node in a new parent will automatically remove it from
-a previous parent. If you want to use the same node again, you can `clone()` it!
-
-Using `clone` returns an identical but unique node (with no parent). If there
-are descendents, these too will be cloned.
-
-Recap time. All nodes have:
-
- - `parent`
- - `parents`
  - `clone()`
- - `isValid()`
- - `lineage()`
- - `remove()`
  - `toJSON()`
  - `toObject()`
  - `toXML()` / `toString()`
 
-And nodes which have the `children` property also all have:
+#### Relationships
 
- - `descendents()`
- - `findNearestDescendent()`
+ - `parent`: The immediate parent node.
+ - `parents`: An array of all parents from nearest to root.
+ - `children`: An array of the immediate child nodes.
+ - `siblings`: An array of sibling nodes not including self.
+ - `next`: The next sibling.
+ - `prev`: The previous sibling.
+ - \* `lineage()`: Iterator for ancestors, but *inclusive of self*.
+ - \* `descendents()`: Iterator for descendent nodes (see below).
+ - \* `tree()`: Iterator for descendent nodes (see below).
+ - `findNearestAncestor(predicate)`: Returns first matching ancestor.
+ - `findNearestDescendent(predicate)`: Returns first matching descendent.
+ - `remove()`: Divorces a node from its parent (returns the node).
+ - `add(node)`: Adds a node as a child.
 
-So onto the node types. From here on I’m going to omit the `hardcore.nodes`
-prefix in examples and assume that if you’re working with these a lot, you’ve
-bound the ones you’re interested in to local variables (for most use cases, this
-will just be `Element` and either `Document` or `DocumentFragment`).
+When a node has children or parents, these relationships are accessible via
+accessor properties and methods to assist navigation and ‘querying’. The three
+methods marked with asterisks are generators. Both iterate *away* from the node.
+
+While `lineage()` has an obvious iteration sequence (each node can have only one
+parent), there are two options for iterating over descendents. The
+`descendents()` iterator moves through children first to last in *generations*,
+such that immediate children are first, followed by the immediate children of
+each member of that generation, and so on. The `tree()` iterator moves first to
+last along *branches*, such that the first immediate child’s own children come
+before the second immediate child.
+
+Note 1: Descendents do not include attributes.
+
+Note 2: Some nodes never have children (e.g. Comment) and some never have
+parents (e.g. Document), so it makes no sense to look for them.
+
+The "findNearest..." methods return the first node (if one exists) matching the
+predicate function. Note that the descendent version uses the walking pattern
+from `descendents()`, not `tree()`.
+
+When `children` is available -- which is only true for certain node types -- it
+is an array-like object. You can’t assign to indices, but it has all the usual
+methods like `map()` and `unshift()`, it has a length property, and it’s
+iterable. The reason it can’t be a straight-up array is because we need to
+manage parent-child relationships; when Proxy and real Array subclassing arrives
+in Node, I’ll go back and improve this sad compromise.
+
+(Note, methods like `map` return arrays, not children-objects.)
+
+The `remove()` and `add()` methods are sugar for splicing and pushing into
+`children` (though `remove()` also works with attributes).
+
+#### Validation
+
+ - `isValid()`
+
+This is mostly meant for internal use, but it’s there, so let’s document it!
+
+The `isValid()` method exists on all nodes, but in many cases it will always
+return `true` (these nodes just can’t end up in an invalid state unless you’re
+being *really* naughty). Mainly it does more only when a node has more complex
+requirements regarding its properties and children. For example, a Document will
+be invalid if it doesn’t have one (and only one) Element among its children.
+
+An important caveat about `isValid` is that it isn’t recursive. When it involves
+children, it only involves them insofar as their direct relationship goes -- so
+an `ElementDeclaration` will be invalid if it has a content spec and its type is
+"ANY", an incompatible combination -- but it won’t be invalid just because one
+of the members of the content spec is itself malformed.
 
 ### Regular Nodes
 
+Now we’ll get into the details of the individual constructors. From here on, I’m
+going to omit the `hardcore.nodes` prefix in examples, since if you’re really
+using these, you’d probably assign them to local variables.
+
 #### `hardcore.nodes.Document`
 
-Normally Document is our ‘target’ -- that is, when parsing concludes, the result
-ought to be a valid Document (or a DoctypeExternal, but just ignore that).
+Normally Document is our ‘target’ -- an instance of Document is the usual result
+when you’ve parsed something.
 
-A document can begin with an xml declaration. This isn’t modeled as a child
-node; it’s just represented as properties of the document. After that it can
-have any number of Comments or ProcessingInstructions, and it may have exactly
-one Doctype, and it must have exactly one Element. If there is a Doctype, it
-must come before the Element.
+A document often begins with an xml declaration. This isn’t really a node, but
+rather describes properties of the document itself, so that’s how it’s modeled
+here. The properties in question are `version`, `encoding` and `standalone`.
 
-Since everything but the element is optional, a valid document can be as simple
-as a single element. Therefore if you parse a snippet of a larger document, so
-long as it is contained in a single node, the result will be valid as a
-document, unless you specify Element as your `target`.
+A valid document can have zero or one DTD and exactly one element as children,
+in that order. But it can also have any number of comments and processing
+instructions, anywhere. Since everything but the element is optional, a valid
+document can be as simple as a single element.
 
 **Argument Object**
 
@@ -1099,23 +1150,20 @@ document, unless you specify Element as your `target`.
  - `encoding`: An optional string indicating the document encoding.
  - `standalone`: An optional boolean that presumably means something.
 
-The properties of a Document are those above plus `children`, which holds child
-nodes. The `children` object is not an array, but it does have almost all array
-methods (push, map, filter, find, splice, etc). What you *can’t* do is directly
-assign values to indices. Although we can more or less subclass Array now, we
-still don’t have Proxy. Once we do, I’ll go back and enhance the various
-`children`-like objects to make use of it and allow assignment by index. (The
-problem there is that we need accessors to make this stuff work right, and
-Array.observe is async and therefore useless here.)
+**Properties**
 
-All `children`-like objects are iterable. They also have a `first` and `last`
-properties for accessing the nodes in those positions.
+ - `version`: As above.
+ - `encoding`: As above.
+ - `standalone`: As above.
+ - `children`: May contain Element, Comment, ProcessingInstruction, Doctype.
+ - `doctype`: Sugar accessor for the doctype.
+ - `root`: Sugar accessor for the element.
 
-There’s are also two convenience properties: `doctype` and `root`. These
-accessors return the Doctype and Element children respectively -- if they’re
-present. You can also use them to set the doctype or root element to a new
-value. It will use the existing position if applicable, or it will prepend or
-append them to `children` if one does not already exist, respectively.
+The two sugar properties provide a convenient way to get and set the doctype
+and root element, since there can only ever be one of either. When used for
+setting, the node will be inserted at the beginning or end of children
+respectively if one did not previously exist; otherwise it replaces the former
+doctype / element at its current index.
 
 ```js
 document.root = new Element({ name: 'hello' });
@@ -1123,7 +1171,9 @@ document.root = new Element({ name: 'hello' });
 
 #### `hardcore.nodes.Element`
 
-Element is the most important node; it’s a "tag".
+For most folks, Element -- along with Attribute (which isn’t *really* a node)
+and Text -- is all that matters. It’s the iconic XML node, made up of either
+an open and close tag or a single self-closing tag.
 
 **XML Example**
 
@@ -1131,125 +1181,157 @@ Element is the most important node; it’s a "tag".
 <hello>yes<what/></hello>
 ```
 
-That’s a "hello" element with two children, a Text node and another Element.
+That’s a "hello" element, which has an open and a close tag, and its two
+children, a Text node and another Element, which is self-closing.
 
 **Argument Object**
 
- - `namespace`: Optional.
- - `name`: The name of the element, required.
- - `text`: Optional string. A shortcut to add a single text node to the new
-   Element.
- - `attributes`: Optional. Like `text`, this option lets you set attributes at
-   instantiation time. It can either be an ElementAttributes object or a simple
-   object hash like `{ id: 'MyElement' }`. In the latter form, namespaces will
-   not be recognized.
+ - `name`: Required: The name of the element.
+ - `namespace`: Optional prefix.
+ - `text`: Optional, sugar for adding a single child text node.
+ - `attributes`: More optional sugar. You can assign attributes at instantiation
+   by providing a simple object hash like `{ id: 'myID' }`.
 
-Like Document, Element has an array-ish `children` property. It has a second
-array-ish property, too: `attributes`. The children can be CDATASection,
-Comment, Element, ProcessingInstruction, or Text nodes. Attributes must be ...
-Attributes. Note that the keys of Attributes must all be unique within a single
-Element.
+**Properties**
 
-There are two additional *get* accessors, `fullName` (which returns
-namespace:name) and `text`, which returns the concatenation of any text content
-in `children`, ignoring other nodes and including CDATA content (and it
-recurses). Thus `document.root.text` returns all of the text in a document.
-Whitespace gets normalized and known entity references are converted to normal
-representations when using the `text` property.
+ - `name`: As above.
+ - `namespace`: As above.
+ - `children`: May contain CDATA, Comment, Element, ProcessingInstruction, Text.
+ - `attributes`: May contain Attribute.
+ - `fullName`: The name inclusive of namespace if applicable (not settable).
+ - `text`: The *total* text content of all descendents (not settable).
+ - `addText(str)`: Sugar for `elem.children.push(new Text(str))`.
+ - `getAttribute({ namespace?, key })`: Returns the value for an attribute.
+ - `setAttribute({ namespace?, key, value })`: Sets or adds this attribute.
+ - `removeAttribute({ namespace?, key })`: Removes an attribute.
 
-(All nodes that have a `namespace` property also have the `fullName` getter. I
-won’t mention it from here on.)
+The convenience methods for interacting with attributes are all sugar methods
+for interacting with `elem.attributes`, which is a ‘children-style’ array-like,
+directly, taking advantage of the fact that an attribute key (or namespace-key
+pair) is always unique per element instance.
 
-Element has three convenience methods for dealing with attributes:
+The `text` accessor provides a convenient means to look at text content without
+more complex navigation and searching. The text thus accessed will have its
+entities unescaped. This makes it easy, for example, to do a full text search of
+a freshly parsed document without worrying about markup getting in the way:
 
- - `getAttribute({ namespace?, key })`
- - `setAttribute({ namespace?, key, value })`
- - `removeAttribute({ namespace?, key })`
-
-In the case of `setAttribute`, if a matching attribute already exists its value
-will be updated; otherwise, it will be created.
-
-Element has another convenience method for text content, `addText(str)`. This
-will append a child text node.
+```js
+doc.root.text.match(myPattern);
+```
 
 #### `hardcore.nodes.Attribute`
 
-An attribute is a key-value pair (with optional namespace). The value can
-include entity references like '&amp;'. In XML, unlike HTML, a value is always
-required, but it can be an empty string.
+An attribute is a key-value pair (with optional namespace) that may appear in an
+Element’s `attributes` array-like. In XML notation, these appear in the opening
+tag of an Element after its name: `<tag key="value">`.
 
-When creating a document from scratch, you probably won’t need to use this
-constructor directly -- the `setAttribute()` method of Element is more
-convenient.
+An attribute’s value may include entity references, just like Text node content.
+
+In XML, a value is required (even if it’s an empty string) and it must be
+quoted. HTML waives both requirements.
+
+Although this constructor is exposed, you probably won’t need it; Element has
+methods for getting and setting attributes that are generally more convenient.
 
 **Argument Object**
 
- - `namespace`: Optional.
  - `key`: Required.
- - `value`: Defaults to ''.
+ - `namespace`: Optional prefix.
+ - `value`: Optional string; illegal characters will be automatically turned
+   into entity references. If omitted, defaults to an empty string.
 
-Properties are the same.
+**Properties**
+
+ - `key`: As above.
+ - `namespace`: As above.
+ - `value`: As above.
+ - `fullName`: Namespace + key (not settable).
 
 #### `hardcore.nodes.Comment`
 
 A comment can contain pretty much any text except the sequence '--'. It also
-can’t end with '-'. If you set a value with these sequences they’ll be corrected
-to '- -' and '- ' respectively.
+can’t end with '-'. If you set a value with these sequences, however,  they’ll
+be corrected to '- -' and '- ' automatically.
+
+Comments don’t allow entity references, but also don’t need them (that is,
+`&amp;` is literally those five characters).
 
 **Argument Object**
 
- - `content`: The text of the comment. Defaults to ''.
+ - `content`: Optional. The text of the comment. Defaults to ''.
 
-The only property is `content`.
+The constructor argument can also be the content string itself.
+
+**Properties**
+
+ - `content`: As above.
 
 #### `hardcore.nodes.Text`
 
-Text nodes require '<'' and ']]>' to be escaped. This will be done automatically
-if needed.
+Text nodes require '<' to be an escaped as an entity reference, as well as '>'
+when it appears in the sequence ']]>'. This will be done automatically if
+needed.
 
 **Argument Object**
 
- - `content`: The text itself.
+ - `content`: Optional. The text itself. Defaults to ''.
 
-The only property is `content`. Remember that for nodes that only take a single
-argument, it’s okay to just supply the value instead of an object, so
-`new Text('some text')` is understood.
+The constructor argument can also be the content string itself.
 
-#### `hardcore.nodes.ProcessingInstruction`
+**Properties**
 
-A processing instruction is a directive that targets a specific interepreting
-agent, or something like that. They’re the ones that begin with '<?', except for
-the xml declaration.
-
-**Argument Object**
-
- - `target`: The target of the processing instruction.
- - `instruction`: The instruction text itself (defaults to '', which is valid).
-
-Note that the instruction cannot contain the sequence '?>'.
+ - `content`: As above.
+ - `cleanContent`: The content with XML entity references converted to normal
+   characters (not settable).
 
 #### `hardcore.nodes.CDATASection`
 
 A CDATA section is a type of ‘marked section’ that contains text that doesn’t
 need to use entity references to encode ampersands or less-than signs. But it
-still can’t contain the closing sequence (]]>) of course, and since entities
-aren’t interpretted that can’t be escaped.
+still can’t contain its own closing sequence (]]>) of course, and since entities
+aren’t interpretted that sequence also cannot be escaped.
 
-It stands for character data, and really it’s a special type of text node. That
-is, it resolves to text content and therefore can appear only where text can
-appear (i.e., inside Elements).
+CDATA is actually just a text node with special properties. Thus its content
+will be included in an Element’s `text` property and it’s treated as text by
+`toObject()` as well.
 
 **Argument Object**
 
- - `content`: Defaults to ''.
+ - `content`: Optional. The text of the comment. Defaults to ''.
 
-The only property is `content`.
+The constructor argument can also be the content string itself.
+
+**Properties**
+
+ - `content`: As above.
+
+#### `hardcore.nodes.ProcessingInstruction`
+
+A processing instruction is a directive that targets a specific interepreting
+agent. They’re the ones that begin with '<?'; you know them from PHP, the XML of
+programming languages.
+
+I kid, I kid.
+
+**Argument Object**
+
+ - `target`: Required. The target of the processing instruction (e.g. 'php').
+ - `instruction`: Optional. The instruction text, which can be anything not
+   containing '?>'.
+
+**Properties**
+
+ - `target`: As above.
+ - `instruction`: As above.
 
 #### Bonus node: `hardcore.nodes.DocumentFragment`
 
-This is actually the same as the ‘children’ part of an Element. It’s exposed
-because it could be convenient, and many other XML tools implement a similar
-tool. But this means it can’t contain an xml declaration or a Doctype, etc.
+DocumentFragment is nearly the same as the ‘children’ part of an Element. Many
+XML tools include this since it’s convenient even though it isn’t actually a
+node. I’m not sure this works the same as DocumentFragments as found elsewhere,
+though, because it’s restricted to Element content.
+
+DocumentFragment is one of the options for `target` when parsing.
 
 ```js
 const fragment = new DocumentFragment();
@@ -1257,63 +1339,77 @@ const fragment = new DocumentFragment();
 fragment.push(new Comment('whatevs'));
 ```
 
+**Argument Object**
+
+*takes no arguments*
+
+**Properties**
+
+- `children`: May contain CDATA, Comment, Element, ProcessingInstruction, Text.
+
 ### DTD Nodes
 
 Turn back now! It’s not too late! This section is haunted! Woo~ooo~ooo!
 
 #### `hardcore.nodes.Doctype`
 
-The Doctype can occur in a Document somewhere before the root element begins.
-Usually this is really simple and benign and looks like this:
+The Doctype can occur in a Document somewhere before the root element. Usually
+this is really simple and benign and looks like this:
 
 ```xml
 <!DOCTYPE html>
 ```
 
 But if you hate yourself, it can actually contain a DTD (doctype definition),
-which is a set of definitions (declarations) saying which elements, attributes,
+which is a set of definitions that describe which elements, attributes,
 entities, and other stuff can appear in the document and how they should behave,
 what constitutes their being well-formed, or what they mean. It sounds useful
 but don’t be fooled.
 
 **Argument Object**
 
- - `name`: Required.
+ - `name`: Required. The doctype name, like 'html'.
  - `systemID`: Optional.
  - `publicID`: Required if `systemID` is present, else invalid.
 
-In addition to the above, there is a `children` property. This works like the
-`children` property of Document or Element. It may contain any number and
-sequence of Comment, ParameterReference, ProcessingInstruction, or any of the
-XxxDeclaration elements described below.
+**Properties**
+
+ - `name`: As above.
+ - `systemID`: As above.
+ - `publicID`: As above.
+ - `children`: May contain Comment, ProcessingInstruction, ParameterReference,
+   and any of the ‘Declaration’ nodes.
+
+The presence of members in `children` will turn this into an internal DTD.
 
 #### `hardcore.nodes.DoctypeExternal`
 
-This is actually a special ‘target’ like `Document`. That is, xml parsing can
-result in either a `Document` or a `DoctypeExternal`. An external doctype is
-a DTD or DTD portion that lives on its own and gets referenced in documents. It
-actually permits a few things that aren’t valid in a document-inline DTD.
+The alternative to an internal DTD is an external one -- a standalone document
+that is (with small exceptions) the same as the `children` part of a Doctype.
+This is one of the valid choices for `target`, though the parser can detect it
+automatically.
 
-For the most part, it’s not very different from `Doctype`, but it can optionally
-possess a ‘text declaration’, which is an ‘xml declaration’ that they decided to
-call something else (well, it does differ -- `version` is optional and
-`standalone` is absent).
+Like Document, DoctypeExternal can have an xml declaration, except here it gets
+called a ‘text declaration’ and only has the `version` and `encoding`
+properties, and `version` is optional.
 
 **Argument Object**
 
- - `version`: The xml version, a number >= 1 and < 2. Optional.
- - `encoding`: The encoding string. Optional.
+ - `version`: Optional. The xml version, a number >= 1 and < 2.
+ - `encoding`: Optional. The encoding string.
 
-Properties are `version`, `encoding` and `children`. The `children` object can
-contain the same things as `Doctype`, but with the addition of
-`ConditionalSection`.
+**Properties**
+
+ - `version`: As above.
+ - `encoding`: As above.
+ - `children`: May contain the same as Doctype, plus ConditionalSection.
 
 #### `hardcore.nodes.ConditionalSection`
 
 A conditional section is a weird thing that can only occur in external DTDs.
 It’s a ‘marked section’ (like CDATA) whose keyword may be either IGNORE or
 INCLUDE. Those indicate that the contents -- which are just more DTD rules --
-are to be either ... ignored or included. But you would never use those words
+are to be either ... ignored or included. But you wouldn’t use those words
 directly, even though they’re legal.
 
 The utility of this is that the keyword may be a *parameter reference* that
@@ -1338,8 +1434,10 @@ Oh my god, why am I explaining this. No one will ever use this.
  - `keyword`: The keyword of the section. It can be 'IGNORE', 'INCLUDE' or a
    parameter reference (e.g. "%myParam;"). Required.
 
-Properties are `keyword` and `children`. The children object is the same as the
-one used by `DoctypeExternal`, and it may be empty.
+**Properties**
+
+ - `keyword`: As above.
+ - `children`: Same as DoctypeExternal.
 
 #### `hardcore.nodes.ParameterReference`
 
@@ -1375,8 +1473,8 @@ of complicated -- the next two classes are used for that.
 
 **Argument Object**
 
- - `namespace`: Optional.
  - `name`: Element name, required.
+ - `namespace`: Optional.
  - `quantifier`: If `type` is 'ANY' or 'EMPTY' this will always be ''. If `type`
    is 'MIXED' it can be '' or '*'. If `type` is 'CHOICE' or 'SEQUENCE' it can be
    '+', '?' or '*'. It describes the number of times the outermost group of
@@ -1387,19 +1485,30 @@ of complicated -- the next two classes are used for that.
    group describes a specific series where order matters. Any and empty do what
    they sound like, and require that `contentSpec` remains empty (no children).
 
-The properties are the same as those above, plus `contentSpec`, which is a
-special version of ChildElementGroup for the root. Because of the complexity of
-the requirements, it’s possible to put an ElementDeclaration into an invalid
-state, so be careful.
+**Properties**
+
+ - `name`: As above.
+ - `namespace`: As above.
+ - `fullName`: The usual; not settable.
+ - `quantifier`: As above.
+ - `type`: As above.
+ - `contentSpec`: A special instance of ChildElementGroup. It may contain
+   ChildElementGroup and ChildElementName, but what is and isn’t legal varies
+   depending on the type and quantifier.
+
+The `contentSpec` is a variation on ChildElementGroup, which in turn is a
+‘children’ array-like. It differs because it must take into account properties
+of the element declaration itself.
+
+The requirements for producing a legal ElementDeclaration are byzantine, and it
+would be easy to place it in an invalid state, so be careful.
 
 #### `hardcore.nodes.ChildElementGroup`
 
 ChildElementGroup is a parenthesized list of one or more ChildElementNames or
-additional ChildElementGroups. The `contentSpec` property of an
-ElementDeclaration is a special type of ChildElementGroup.
-
-Like `attributes` or `children`, ChildElementGroup possesses almost all array
-methods.
+additional ChildElementGroups. It is an array-like, but it has unique structural
+requirements. Although it can recursively contain more CEGs, the ‘leaf’ nodes
+of every branch must be ChildElementName.
 
 **XML Example**
 
@@ -1416,9 +1525,15 @@ is "CHOICE" and the `quantifier` is "*".
 **Argument Object**
 
  - `quantifier`: This can be '', '+', '?' or '*', though the `type` may restrict
-   which of these are valid on the root element.
+   which of these are valid on the root content spec.
  - `type`: For non-root ChildElementGroups, the type may only be "CHOICE" or
-   "SEQUENCE". For the root, see the description at ElementDeclaration.
+   "SEQUENCE". For the root content spec, see the description at
+   ElementDeclaration; there are additional options.
+
+**Properties**
+
+ - `quantifier`: As above.
+ - `type`: As above.
 
 #### `hardcore.nodes.ChildElementName`
 
@@ -1438,8 +1553,8 @@ ChildElementName as opposed to the group.
 
 **Argument Object**
 
- - `namespace`: Optional.
  - `name`: Element name, required.
+ - `namespace`: Optional.
  - `quantifier`: An empty string (default) or '+', '?' or '*'. Depending on the
    parent ElementDeclaration’s type, valid quantifiers may be restricted.
 
@@ -1449,8 +1564,8 @@ Properties are the same as the arguments.
 
 An AttListDeclaration describes the attributes to associate with an element.
 Logically, these might as easily have been part of the ElementDeclaration since
-each AttListDeclaration can correspond with only one Element, but I’m glad it
-isn’t since ElementDeclaration is already complicated enough.
+each AttListDeclaration can correspond with only one Element, but being verbose
+themselves, this if probably for the best.
 
 **XML Example**
 
@@ -1462,8 +1577,8 @@ In this example, pizza is the name of the element, and topping is the name of
 its one attribute. This is followed by an enumeration of valid values and a
 default value to use if the attribute is absent.
 
-When `pretty` is used with `toXML()`, the definitions within will be aligned as
-a table:
+When the `pretty` option is used with `toXML()`, the attribute definitions
+within will be aligned as a table:
 
 ```xml
 <!ATTLIST student_name
@@ -1474,35 +1589,36 @@ a table:
 
 **Argument Object**
 
- - `namespace`: Optional.
  - `name`: Element name, required.
+ - `namespace`: Optional.
 
-Instance properties are `defs` (an AttributeDefinitions object) plus those
-above. AttributeDefinitions is like `children`; it has array methods. It is
-allowed to be empty, and its members must be AttributeDefinitions.
+**Properties**
+
+ - `name`: As above.
+ - `namespace`: As above.
+ - `defs`: Another children array-like. May contain AttributeDefinition.
 
 #### `hardcore.nodes.AttributeDefinition`
 
-A single AttributeDefinition is a member of the `defs` described above. The
-example given for AttListDeclaration will suffice, too. 
-
+A single AttributeDefinition is a member of the `defs` property described above.
 This is another relatively complicated one.
 
 **Argument Object**
 
- - `namespace`: Optional.
  - `name`: The attribute name, required.
+ - `namespace`: Optional.
  - `type`: May be '' (default), 'CDATA', 'ENTITIES', 'ENTITY', 'ID', 'IDREF',
    'IDREFS', 'NMTOKEN', 'NMTOKENS', or 'NOTATION'
  - `defaultType`: May be '', '#FIXED', '#IMPLIED' (default), or '#REQUIRED'.
  - `defaultValue`: String. Required if `defaultType` is '' or '#FIXED'; invalid
    otherwise.
- - `members`: An array of strings, optional. This is an enumeration of valid
-   values. Can only be included if `type` is '' or 'NOTATION'.
+ - `members`: An array of strings, optional. This is meant to be an enumeration
+   of valid values. Can only be included if `type` is '' or 'NOTATION'.
 
-Properties are the same as above. Note that the `members` array is not like
-other children properties; you can set it, but it just contains strings, not
-special objects, and it can’t be manipulated, only redefined.
+Properties are the same as above.
+
+Note that the `members` array is *not* a children array-like. It should be set
+to a regular array (of strings) or not set at all, depending on the `type`.
 
 Things to know: if the `type` is 'NOTATION', the rules for `members` change.
 The difference is subtle though: with 'NOTATION', members must be valid "names"
@@ -1533,7 +1649,7 @@ Defines a regular entity ('&something;') or a parameter entity ('%something;').
 ```
 
 Then you could use '&greeting;' anywhere that entity references are allowed.
-It could be that simple, anyway, but this is XML.
+You might expect this one to be simple, but this is still XML.
 
 **Argument Object**
 
@@ -1545,8 +1661,10 @@ It could be that simple, anyway, but this is XML.
  - `systemID`: The system literal identifier if you swing that way.
  - `value`: A string value that the entity should resolve to.
 
-Note that `value` is mutually exclusive with `systemID`, and that `publicID`
-demands that there be a `systemID`.
+Properties are the same as above.
+
+Note that `value` is mutually exclusive with `systemID`, and `publicID` is only
+valid if there’s also a `systemID`.
 
 #### `hardcore.nodes.NotationDeclaration`
 
@@ -1555,22 +1673,28 @@ Go ahead, declare a notation with this handy helper!
 **XML Example**
 
 ```xml
-<!NOTATION xml-is-stupid PUBLIC "eh">
+<!NOTATION xml-is-stupid PUBLIC "blergh">
 ```
 
 **Argument Object**
 
- - `namespace`: Optional.
  - `name`: Required.
+ - `namespace`: Optional.
  - `publicID`: You know, the public ID. Of the notation.
  - `systemID`: Here’s a thing too.
 
+Properties are the same as above.
+
 Either `publicID` or `systemID` is required, or both. Unlike other cases with
-these properties, you can have `publicID` on its own here.
+these properties, though, you can have `publicID` on its own here.
 
 ## HTML
 
-There are a handful of special -- but still generic -- HTML element nodes.
+There are a handful of special subclasses for use with HTML; these will be used
+if you parse in HTML mode.
+
+Unlike XML, in HTML element and attribute names are case insensitive, and
+hardcore will normalize to lowercase.
 
 ### HTMLElement
 
@@ -1595,32 +1719,15 @@ is what these accessors are sugar for.
  - value
  - width
 
-There are three additional methods to make `class` nice:
+There are also three methods to make `class` nice:
 
  - `addClass(name)`
  - `hasClass(name)`
  - `removeClass(name)`
 
-To give an idea of how one might use hardcore with HTML, let’s say you want to
-remove a particular class from every ‘p’ element. You might do it like this:
-
-```js
-for (const node of doc.descendents) {
-   if (elem.name == 'p')
-      elem.removeClass('oldClass');
-}
-```
-
-And while there’s no CSS selector tool in here, you can do a lot of the same
-sort of stuff programmatically without much fuss. Maybe you only want to remove
-‘oldClass’ when the paragraph is a descendent of a div?
-
-```js
-for (const node of doc.descendents) {
-   if (elem.name == 'p' && elem.parents.some(elem => elem.name === 'div'))
-      elem.removeClass('oldClass');
-}
-```
+To be honest, I don’t expect anyone is likely to use hardcore for HTML class
+manipulation of this sort, but it’s just plausible enough and wasn’t much
+trouble to include.
 
 ### HTMLElementASC
 
