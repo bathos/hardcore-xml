@@ -1,5 +1,5 @@
 {
-  "name": "hardcore-xml",
+  "name": "hardcore",
   "version": "0.0.1",
   "description": "xml/html parser, transformer, and creator",
   "main": "lib/index.js",
