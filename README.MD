@@ -1750,7 +1750,7 @@ of its children, if applicable.
 
 Both the HTMLElementASC and HTMLElementPre constructors have a `nodes` property,
 which is a hash of element names which fall in these categories. You could edit
-these objects to change that behavior.
+these to change the behavior.
 
 ### HTMLAttribute
 
