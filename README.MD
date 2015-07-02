@@ -327,7 +327,7 @@ hardcore.parse(html, { html: true }).then(doc => {
    //   <head></head>
    //   <body>
    //     <div class="poo">
-   //       <p>
+   //       <p class="">
    //         poo!
    //       </p>
    //     </div>

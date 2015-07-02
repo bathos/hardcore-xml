@@ -138,3 +138,115 @@ tape('Conversion to Object', function(t) {
 		convertTest(t, opts);
 	});
 });
+
+// README EXAMPLES /////////////////////////////////////////////////////////////
+
+tape('Readme Examples', function(t) {
+	t.plan(5)
+
+	// 1
+
+	hardcore.parse('<tagline>XML, The Future of Data</tagline>').then(
+		function(doc) {
+			var obj = doc.toObject({ rules: [ {
+				match: 'tagline',
+				coerce: String,
+				after: function(str) {
+					return str.replace('Future', 'Mom Jeans');
+				}
+			} ] });
+
+			t.deepEqual(
+				obj,
+				{ tagline: 'XML, The Mom Jeans of Data' },
+				'mom jeans'
+			);
+		});
+
+	// 2
+
+	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
+
+	var html = '<div class="poo"><p class="poo">poo!</div>';
+
+	hardcore.parse(html, { html: true }).then(function (doc) {
+		var exp = '<!DOCTYPE html>\n<html>\n  <head></head>\n  <body>\n    <div class="poo">\n      <p class="">\n        poo!\n      </p>\n    </div>\n  </body>\n</html>';
+
+		[].concat(_toConsumableArray(doc.descendents()))
+			.filter(function (node) {
+				return node.name == 'p';
+			}).forEach(function (node) {
+				return node.removeClass('poo');
+			});
+
+		var xml = doc.toXML({ tab: '  ' });
+
+		t.equal(xml, exp, 'poo');
+	});
+
+	// 3 & 4
+
+	var xml =
+		'<litter>' +
+		'   <cat>Grumpycat</cat>' +
+		'</litter>' +
+		'<litter>' +
+		'   <cat>Lil Bub</cat>' +
+		'   <cat>Maru</cat>' +
+		'</litter>';
+
+	hardcore.parse(xml, { target: 'document fragment' }).then(function(doc) {
+		var exp1 = {
+			litter: [
+				{ cat: 'Grumpycat' },
+				{ cat: [ 'Lil Bub', 'Maru' ] }
+			]
+		};
+
+		var exp2 = {
+			litters: [
+				{ cats: [ 'Grumpycat' ] },
+				{ cats: [ 'Lil Bub', 'Maru' ] }
+			]
+		};
+
+		var opts = {
+			rules: [
+				{ match: 'litter', rename: 'litters', plural: true },
+				{ match: 'cat', rename: 'cats', plural: true }
+			]	
+		};
+
+		t.deepEqual(doc.toObject(), exp1, 'famous cats (default)');
+
+		t.deepEqual(doc.toObject(opts), exp2, 'famous cats (custom)');
+	});
+
+	// 5
+
+	var xml2 =
+		'<cat name="Spottis" age="12">' +
+		'   <perfect>yes</perfect>' +
+		'   <fur>white / black</fur>' +
+		'</cat>';
+
+	hardcore.parse(xml2).then(function(doc) {
+		var rules = [
+			{ match: [ 'age' ], coerce: Number },
+			{ match: [ 'cat' ], collapse: true },
+			{
+				match: [ 'fur' ],
+				coerce: String,
+				before: function(node, val) { return val.toUpperCase(); }
+			},
+			{ match: [ 'perfect' ], coerce: Boolean }
+		];
+
+		var opts = { rules: rules };
+		var exp = {
+			name: 'Spottis', age: 12, perfect: true, fur: 'WHITE / BLACK'
+		};
+
+		t.deepEqual(doc.toObject(opts), exp, 'best cat');
+	});
+});
