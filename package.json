@@ -1,6 +1,6 @@
 {
   "name": "hardcore",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "xml/html parser, transformer, and creator",
   "main": "lib/index.js",
   "scripts": {
