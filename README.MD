@@ -4,6 +4,16 @@
 a lot more I should write and there are probably still bugs at this stage. Not
 recommended for serious use yet.
 
+> EDIT, SEVERAL DAYS LATER: As I began the cleanup process, I realized that getting
+things clean (and getting me more confident about the parser’s accuracy) was going
+to take more than the usual minor refactoring. I investigated ANTLR and wrote an xml
+grammar there (it comes with one, but that one doesn't cover the real XML spec). I
+learned a ton in the process -- antlr really made parsing click for me. That said, I
+felt the generated result code was unnecessarily complex and Java-like for our
+purposes, so I’ve begun applying the lessons I learned with antlr grammars ‘manually’.
+Hardcore will probably change significantly in the next version as a result, but I
+think it will be a much better module.
+
 # hardcore
 
 XML and HTML parsing, editing, construction and transformation library for node.
