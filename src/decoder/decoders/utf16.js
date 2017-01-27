@@ -22,7 +22,7 @@ export default function * (chunk) {
   // off worrying about that since we might also have a remainder if we’re
   // dealing with surrogates anyway.
 
-  const methodKey = `readUInt32${ this.endianness }`;
+  const methodKey = `readUInt16${ this.endianness }`;
   const count     = Math.floor(buffer.length / 2);
 
   let offset = 0;
@@ -52,8 +52,8 @@ export default function * (chunk) {
       // If there are not at least two additional bytes yet to be read, we must
       // place these values in reserve and exit early.
 
-      if (buffer.length - offset < 4) {
-        this.reserved = this.buffer.slice(offset);
+      if ((buffer.length - (offset * 2)) < 4) {
+        this.reserved = buffer.slice(offset * 2);
         return;
       }
 

@@ -1,4 +1,4 @@
-export default cp =>
+export default Object.assign(cp =>
   cp === 0x00000A ||
   cp === 0x00000D ||
   cp === 0x000020 ||
@@ -11,4 +11,6 @@ export default cp =>
   cp === 0x00003D ||
   (cp >= 0x00003F && cp <= 0x00005A) ||
   cp === 0x00005F ||
-  (cp >= 0x000061 && cp <= 0x00007A);
+  (cp >= 0x000061 && cp <= 0x00007A),
+  { description: 'valid double-quoted public ID' }
+);

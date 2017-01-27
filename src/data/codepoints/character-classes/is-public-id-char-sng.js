@@ -1,5 +1,7 @@
 import isPublicIDCharDbl from './is-xml-char';
 
-export default cp =>
+export default Object.assign(cp =>
   cp !== 0x000027 &&
-  isPublicIDCharDbl(cp);
+  isPublicIDCharDbl(cp),
+  { description: 'valid single-quoted public ID' }
+);

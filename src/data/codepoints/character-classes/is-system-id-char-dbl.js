@@ -1,5 +1,7 @@
 import isXMLChar from './is-xml-char';
 
-export default cp =>
+export default Object.assign(cp =>
   cp !== 0x000022 &&
-  isXMLChar(cp);
+  isXMLChar(cp),
+  { description: 'valid double-quoted system ID' }
+);

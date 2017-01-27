@@ -1,5 +1,7 @@
 import isCDATAChar from './is-cdata-char';
 
-export default cp =>
+export default Object.assign(cp =>
   cp !== 0x000022 &&
-  isCDATAChar(cp);
+  isCDATAChar(cp),
+  { description: 'valid double-quoted attribute' }
+);

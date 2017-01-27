@@ -1,4 +1,4 @@
-export default cp =>
+export default Object.assign(cp =>
   cp === 0x00003A ||
   (cp >= 0x000041 && cp <= 0x00005A) ||
   cp === 0x00005F ||
@@ -205,4 +205,6 @@ export default cp =>
   (cp >= 0x0030A1 && cp <= 0x0030FA) ||
   (cp >= 0x003105 && cp <= 0x00312C) ||
   (cp >= 0x004E00 && cp <= 0x009FA5) ||
-  (cp >= 0x00AC00 && cp <= 0x00D7A3);
+  (cp >= 0x00AC00 && cp <= 0x00D7A3),
+  { description: 'valid name start' }
+);

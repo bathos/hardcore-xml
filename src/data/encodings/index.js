@@ -182,6 +182,8 @@ export default {
   TIS62025330:        { codepage: iso885911, type: 'ONEBYTE'  }, // * **
   TURKISH:            { codepage: iso88599,  type: 'ONEBYTE'  }, // *
   TURKISH8:           { codepage: iso88599,  type: 'ONEBYTE'  }, // *
+  UCS2:               { noSurrogates: true,  type: 'UTF16'    }, // *
+  UCS4:               {                      type: 'UTF32'    }, // *
   US:                 { codepage: usascii,   type: 'ONEBYTE'  },
   USASCII:            { codepage: usascii,   type: 'ONEBYTE'  },
   UTF8:               {                      type: 'UTF8'     },

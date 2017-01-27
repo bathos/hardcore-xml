@@ -11,10 +11,11 @@ module.exports.testOutput = ({ name, bytes, opts, expected }) => {
     decoder.on('codepoint', cp => res.push(cp));
 
     decoder.on('error', err => {
-      console.log(decoder)
-      test.error(err);
-      test.end();
-      failed = true;
+      if (!failed) {
+        test.error(err);
+        test.end();
+        failed = true;
+      }
     });
 
     decoder.on('finish', () => {
@@ -35,5 +36,18 @@ module.exports.testOutput = ({ name, bytes, opts, expected }) => {
     } else {
       decoder.end(Buffer.from(bytes));
     }
+  });
+};
+
+module.exports.testError = ({ name, bytes, opts, match }) => {
+  tap.test(name, test => {
+    const decoder = new Decoder(opts);
+
+    decoder.on('error', err => {
+      test.match(err.message, match);
+      test.end();
+    });
+
+    decoder.end(Buffer.from(bytes));
   });
 };

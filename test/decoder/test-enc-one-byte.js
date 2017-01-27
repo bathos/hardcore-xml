@@ -1,6 +1,4 @@
-const tap            = require('tap');
-const Decoder        = require('../../.').Decoder;
-const { testOutput } = require('./test-decoder-util');
+const { testError, testOutput } = require('./halp-decoder');
 
 testOutput({
   bytes: [ 0x50, 0x6F, 0x6F, 0x70 ],
@@ -30,13 +28,9 @@ testOutput({
   opts: { encoding: 'ASCII' }
 });
 
-tap.test('emits appropriate error when encountering undefined byte', test => {
-  const decoder = new Decoder({ encoding: 'ASCII' });
-
-  decoder.on('error', err => {
-    test.match(err.message, /0xFF/i);
-    test.end();
-  });
-
-  decoder.end(Buffer.from([ 0x50, 0x6F, 0x6F, 0xFF ]));
+testError({
+  bytes: [ 0x50, 0x6F, 0x6F, 0xFF ],
+  match: /0xFF/i,
+  name: 'emits appropriate error when encountering undefined byte',
+  opts: { encoding: 'ASCII' }
 });

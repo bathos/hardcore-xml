@@ -1,6 +1,4 @@
-const tap            = require('tap');
-const Decoder        = require('../../.').Decoder;
-const { testOutput } = require('./test-decoder-util');
+const { testError, testOutput } = require('./halp-decoder');
 
 testOutput({
   bytes: [ 0x50, 0x6F, 0x6F, 0x70 ],
@@ -30,13 +28,9 @@ testOutput({
   opts: { encoding: 'Shift_JIS' }
 });
 
-tap.test('emits appropriate error for bad continuation', test => {
-  const decoder = new Decoder({ encoding: 'Shift_JIS' });
-
-  decoder.on('error', err => {
-    test.match(err.message, /0x8900/i);
-    test.end();
-  });
-
-  decoder.end(Buffer.from([ 0x89, 0x00 ]));
+testError({
+  bytes: [ 0x89, 0x00 ],
+  match: /0x8900/i,
+  name: 'emits appropriate error for bad continuation in shift JIS',
+  opts: { encoding: 'Shift_JIS' }
 });
