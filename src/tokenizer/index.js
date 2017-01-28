@@ -180,13 +180,16 @@ class Tokenizer extends Decoder {
     //    buffer or stream or a promise that resolves to a buffer or stream.
     //    The "type" arg is "DTD" or "ENTITY". The info object will have some
     //    combination of "publicID" and "systemID" properties, and if "systemID"
-    //    is populated, so too will be "systemIDEscaped", which is a URL-encoded
-    //    version of the systemID for convenience. The reason this is
-    //    user-provided is that in typical usage, one does not actually want to
-    //    be fetching arbitrary URIs from the internet when parsing for reasons
-    //    of security and efficiency — most likely you either want to whitelist
-    //    specific URLs, have a caching layer, or keep local DTDs etc which you
-    //    know will be needed; all of this falls outside Hardcore’s domain.
+    //    is populated, so too will be "systemIDEncoded", which is a URL-encoded
+    //    version of the systemID for convenience. When type is DTD, the "name"
+    //    property will also be provided. The reason this function must be
+    //    supplied by the user is that in typical usage, one does not want to
+    //    be fetching arbitrary URIs from the internet when parsing. For reasons
+    //    of security and efficiency, most likely you either want to whitelist
+    //    specific URLs (with a caching layer), or keep external files which you
+    //    know will be needed on the local system; all of this falls outside
+    //    Hardcore’s domain. (Though I have been considering providing a
+    //    catalogue of common DTDs like SVG, MathML, etc...)
     //
     //    Unparsed entities are not dereferenced. We will maintain the reference
     //    information and it will be available in the resulting AST, but there
@@ -417,7 +420,7 @@ class Tokenizer extends Decoder {
   //
   // To see why this is ‘two tiered’, consider the case of expansions which
   // occur in the element content context. The illegal codepoint would be the
-  // "<" of "</" — but "<" might be legal until we see the "/". So the first
+  // "<" of "</" — but "<" is plausibly legal until we see the "/". So the first
   // call locks in the correct terminal ticket for "<", and we only call the
   // second function if it really was "</". Otherwise, &poop;/, where &poop;
   // ends with "<", would be legal.
@@ -450,6 +453,70 @@ class Tokenizer extends Decoder {
     };
   }
 
+  // Wraps a state iterator to permit parameter references at nearly any
+  // position. This occurs when we are parsing the expansion of an external
+  // entity reference — it turns into a fucking free-for-all and enforcing
+  // boundary constraints becomes a huge, difficult problem (which helps explain
+  // why the one public DTD validator I could find online actually gets this
+  // wrong and permits illegal boundary crossings in this context).
+  //
+  // This is tentative code — I’m not sure yet if this is really a viable
+  // solution. Kind of crossing my fingers, since the alternatives that come to
+  // mind so far demand a horrifying amount of extra complexity.
+
+  * chaoticNeutral(iter) {
+    const parenBoundaries = [];
+
+    let literalDelimiter;
+    let cp;
+
+    iter.next();
+
+    while (true) {
+      cp = yield;
+
+      // When we’re not inside a literal string, a parameter reference is always
+      // legal (even if there is no way it could *really* be legal, owing to the
+      // added space padding).
+
+      if (cp === PERCENT_SIGN && !literalDelimiter) {
+        yield * this.PARAMETER_ENTITY_REFERENCE();
+        continue;
+      }
+
+      // If we had a literal delimiter (", ') and match it, we can remove the
+      // ban on special handling of parameter references. Otherwise, this is
+      // the beginning of such a section. Thank god we don’t have to worry about
+      // slash-style escapes.
+
+      if (cp === literalDelimiter) {
+        literalDelimiter = undefined;
+      } else if (cp === QUOTE_DBL || cp === QUOTE_SNG) {
+        literalDelimiter = cp;
+      }
+
+      // If we are not inside a literal, parentheses represent the other special
+      // case, except these delimiters do not block interior parameter
+      // references — instead they just demand hierarchical balance.
+
+      if (!literalDelimiter) {
+        if (cp === PARENTHESIS_LEFT) {
+          parenBoundaries.push(this.boundary());
+        }
+
+        if (cp === PARENTHESIS_RIGHT && parenBoundaries.length) {
+          parenBoundaries.pop()()(); // haha yes
+        }
+      }
+
+      const { done } = iter.next(cp);
+
+      if (done) {
+        return;
+      }
+    }
+  }
+
   // Called to dereference external entities. It just wraps the user-provided
   // "opts.dereference" function so that it is always a promise.
 
@@ -464,8 +531,15 @@ class Tokenizer extends Decoder {
   dereferenceDTD() {
     this.haltAndCatchFire();
 
+    const { doctype } = this;
+
     this
-      .dereference('DTD', this.doctype)
+      .dereference('DTD', {
+        name: doctype.name,
+        publicID: doctype.publicID,
+        systemID: doctype.systemID,
+        systemIDEncoded: doctype.systemID && encodeURI(doctype.systemID)
+      })
       .then(bufferOrStream => new Promise((resolve, reject) => {
         const dtdTokenizer = new Tokenizer(Object.assign({}, this._opts, {
           target: 'extSubset'
@@ -533,7 +607,13 @@ class Tokenizer extends Decoder {
     const expansionPromise = this._expansionPromise__ = this
       .resolveEntityText(type, entityName)
       .then(entity => new Promise((resolve, reject) => {
-        const iter = entity.cps[Symbol.iterator]();
+        expansionTicket.external = Boolean(entity.systemID || entity.publicID);
+
+        const cps = type === 'PARAMETER' && this.activeExpansions.length === 1
+          ? [ SPACE, ...entity.cps, SPACE ]
+          : cps;
+
+        const iter = cps[Symbol.iterator]();
 
         const expand = () => {
           let cp;
@@ -597,7 +677,8 @@ class Tokenizer extends Decoder {
     } else {
       return this.dereference('ENTITY', {
         publicID: entity.publicID,
-        systemID: entity.systemID
+        systemID: entity.systemID,
+        systemIDEncoded: entity.systemID && encodeURI(entity.systemID)
       }).then(bufferOrStream => {
         const dtdTokenizer = new Tokenizer(Object.assign({}, this._opts, {
           target: 'extEntity'
@@ -620,7 +701,7 @@ class Tokenizer extends Decoder {
           bufferOrStream.pipe(dtdTokenizer);
         }
       }).then(cps => {
-        entity.cps = type === 'GENERAL' ? cps : [ SPACE, ...cps, SPACE ];
+        entity.cps = cps;
         return entity;
       });
     }
@@ -692,7 +773,8 @@ class Tokenizer extends Decoder {
   //     )
   //   );
   //
-  // Alternatively, this could be written more linearly:
+  // Alternatively, this could be written more linearly, which is what I’ve
+  // generally preferred simply because it’s the order we read things in:
   //
   // cp = yield * this.oneOrMoreWhere('...', isDecChar, numberCPs);
   // cp = yield * this.oneIs('...', PERIOD, numberCPs, cp);
@@ -701,8 +783,8 @@ class Tokenizer extends Decoder {
   // Each method can be considered equivalent to applying an EBNF/regex
   // quantifier (*, +, none) to either literal characters ("is") or character
   // classes ("where"). Not every possible combination is represented since some
-  // would never be used (e.g. oneOrNoneIs) — plus some would imply the need for
-  // backtracking, which fortunately is entirely avoidable in XML.
+  // would never be used (e.g. zeroOrMoreIs) — plus some variations might imply
+  // the need for backtracking, which fortunately is entirely avoidable in XML.
 
   // ONEIS
   // Match a single, specific codepoint.
@@ -873,6 +955,17 @@ class Tokenizer extends Decoder {
   //
   //////////////////////////////////////////////////////////////////////////////
 
+  // ATTLIST DECLARATION ///////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Beginning immediately after "<!A".
+
+  * ATTLIST_DECL() {
+    // TODO
+  }
+
   // CHARACTER REFERENCE ///////////////////////////////////////////////////////
   //
   // :: ✘ ARGUMENT CP
@@ -880,14 +973,13 @@ class Tokenizer extends Decoder {
   //
   // Beginning immediately after "&#".
   //
-  // This is a somewhat special case: the resolve character is not a greediness
-  // artifact, but rather the resolved codepoint represented by the character
-  // reference.
+  // This is a somewhat special case: the returned codepoint is not a greediness
+  // artifact, but rather the value resolved from the character reference.
   //
-  // Anywhere they may appear, character references resolve to the codepoint
-  // they describe at the time of initial evaluation. This contrasts with how
-  // general entities work, as they are not resolved as references until the
-  // time of in-document usage.
+  // Excepting occurrences within the EXT_ENTITY state, any time a character
+  // reference is encountered legally it is immediately transformed into the
+  // value being escaped. This contrasts with how general entities work, as they
+  // are not resolved as references until the time of in-document usage.
   //
   // >> CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
 
@@ -950,6 +1042,17 @@ class Tokenizer extends Decoder {
         cp = yield * this.oneWhere(isCommentChar, commentCPs, cp);
       }
     }
+  }
+
+  // CONDITIONAL SECTION ///////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Starting immediately after "<![".
+
+  * CONDITIONAL_SECT() {
+    // TODO
   }
 
   // DOCUMENT //////////////////////////////////////////////////////////////////
@@ -1089,10 +1192,6 @@ class Tokenizer extends Decoder {
   //                   ('[' intSubset ']' S?)? '>'
   // ExternalID    ::= 'SYSTEM' S SystemLiteral |
   //                   'PUBLIC' S PubidLiteral S SystemLiteral
-  // intSubset     ::= (markupdecl | DeclSep)*
-  // markupdecl    ::= elementdecl | AttlistDecl | EntityDecl | NotationDecl
-  //                 | PI | Comment
-  // PEReference   ::= '%' Name ';'
   // PubidChar     ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
   // PubidLiteral  ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
   // SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
@@ -1131,11 +1230,14 @@ class Tokenizer extends Decoder {
         externalIDPossible = false;
         internalSubsetPossible = false;
 
-        while (false) {
-          // TODO
+        cp = yield * this.DOCUMENT_doctypeDecl_intSubset();
+
+        if (cp !== BRACKET_RIGHT) {
+          this._expected(cp, '"%", "<", "]", or whitespace');
         }
 
         cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+
         continue;
       }
 
@@ -1202,6 +1304,120 @@ class Tokenizer extends Decoder {
       }
 
       cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+    }
+  }
+
+  // DOCUMENT: Doctype Declaration: Internal Subset ////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✔ RETURN CP
+  //
+  // Beginning immediately after "[" in doctype declaration. Return CP is first
+  // codepoint at same-level which is not whitespace, "<", or "%"; in other
+  // words, parent should confirm it is the "]" delimiter.
+  //
+  //
+  // intSubset     ::= (markupdecl | DeclSep)*
+  // markupdecl    ::= elementdecl | AttlistDecl | EntityDecl | NotationDecl
+  //                 | PI | Comment
+  // PEReference   ::= '%' Name ';'
+
+  * DOCUMENT_doctypeDecl_intSubset() {
+    let cp;
+
+    while (true) {
+      cp = this.zeroOrMoreWhere(isWhitespaceChar);
+
+      if (cp === LESS_THAN) {
+        const markupBoundary = this.boundary();
+
+        cp = yield;
+
+        if (cp === QUESTION_MARK) {
+          yield * this.PROCESSING_INSTRUCTION();
+          markupBoundary()();
+          continue;
+        }
+
+        if (cp === EXCLAMATION_POINT) {
+          cp = yield;
+
+          if (cp === HYPHEN) {
+            yield * this.COMMENT();
+            markupBoundary()();
+            continue;
+          }
+
+          const [ expansionTicket ] = this.activeExpansions || [ {} ];
+
+          if (cp === A_UPPER) {
+            yield * (expansionTicket.external
+              ? this.chaoticNeutral(this.ATTLIST_DECL())
+              : this.ATTLIST_DECL()
+            );
+            markupBoundary()();
+            continue;
+          }
+
+          if (cp === E_UPPER) {
+            cp = yield;
+
+            if (cp === L_UPPER) {
+              yield * (expansionTicket.external
+              ? this.chaoticNeutral(this.ELEMENT_DECL())
+              : this.ELEMENT_DECL()
+            );
+              markupBoundary()();
+              continue;
+            }
+
+            if (cp === N_UPPER) {
+              yield * (expansionTicket.external
+                ? this.chaoticNeutral(this.ENTITY_DECL())
+                : this.ENTITY_DECL()
+              );
+              markupBoundary()();
+              continue;
+            }
+
+            this._expected(cp, '"LEMENT" or "NTITY"');
+          }
+
+          if (cp === N_UPPER) {
+            yield * (expansionTicket.external
+              ? this.chaoticNeutral(this.NOTATION_DECL())
+              : this.NOTATION_DECL()
+            );
+            markupBoundary()();
+            continue;
+          }
+
+          if (expansionTicket.external) {
+            if (cp === BRACKET_LEFT) {
+              yield * this.CONDITIONAL_SECT();
+              markupBoundary()();
+              continue;
+            }
+
+            this._expected(
+              cp, '"ATTLIST", "ELEMENT", "ENTITY", "NOTATION", "[", or "--"'
+            );
+          }
+
+          this._expected(
+            cp, '"ATTLIST", "ELEMENT", "ENTITY", "NOTATION", or "--"'
+          );
+        }
+
+        this._expected(cp, '"?" or "!"');
+      }
+
+      if (cp === PERCENT_SIGN) {
+        yield * this.PARAMETER_ENTITY_REFERENCE();
+        continue;
+      }
+
+      return cp;
     }
   }
 
@@ -1682,6 +1898,28 @@ class Tokenizer extends Decoder {
     }
   }
 
+  // ELEMENT DECLARATION ///////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Beginning immediately after "<!EL".
+
+  * ELEMENT_DECL() {
+    // TODO
+  }
+
+  // ENTITY DECLARATION ////////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Beginning immediately after "<!EN".
+
+  * ENTITY_DECL() {
+    // TODO
+  }
+
   // EXT_ENTITY ////////////////////////////////////////////////////////////////
   //
   // :: ✘ ARGUMENT CP
@@ -1745,7 +1983,7 @@ class Tokenizer extends Decoder {
     while (true) {
       cp = yield;
 
-      if (textDeclPossible && cp === GREATER_THAN) {
+      if (textDeclPossible && cp === LESS_THAN) {
         textDeclPossible = false;
 
         const candidateCPs = [ cp ];
@@ -1830,19 +2068,147 @@ class Tokenizer extends Decoder {
   //
   // Nailed it, guys.
   //
-  // >> extSubset     ::= TextDecl? extSubsetDecl
-  // >> extSubsetDecl ::= (markupdecl | conditionalSect | DeclSep)*
+  // >> conditionalSect    ::= includeSect | ignoreSect
+  // >> extSubset          ::= TextDecl? extSubsetDecl
+  // >> extSubsetDecl      ::= (markupdecl | conditionalSect | DeclSep)*
+  // >> Ignore             ::= Char* - (Char* ('<![' | ']]>') Char*)
+  // >> ignoreSect         ::= '<![' S? 'IGNORE' S?
+  //                           '[' ignoreSectContents* ']]>'
+  // >> ignoreSectContents ::= Ignore ('<![' ignoreSectContents ']]>' Ignore)*
+  // >> includeSect        ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
 
   * EXT_SUBSET() {
     let textDeclPossible = true;
-    let cp, x;
+    let cp;
 
-    // TODO
+    while (true) {
+      cp = textDeclPossible
+        ? (yield)
+        : (yield * this.zeroOrMoreWhere(isWhitespaceChar));
 
-    while (cp = yield) {
-      if (!x) this.token('EXAMPLE', [ P_UPPER, O_UPPER, O_UPPER, P_UPPER ]);
-      x = true;
+      if (textDeclPossible && isWhitespaceChar(cp)) {
+        textDeclPossible = false;
+        continue;
+      }
+
+      if (cp === LESS_THAN) {
+        const markupBoundary = this.boundary();
+
+        cp = yield;
+
+        if (cp === EXCLAMATION_POINT) {
+          cp = yield;
+
+          if (cp === BRACKET_LEFT) {
+            yield * this.CONDITIONAL_SECT();
+            markupBoundary()();
+            continue;
+          }
+
+          if (cp === HYPHEN) {
+            yield * this.COMMENT();
+            markupBoundary()();
+            continue;
+          }
+
+          if (cp === A_UPPER) {
+            yield * this.chaoticNeutral(this.ATTLIST_DECL());
+            markupBoundary()();
+            continue;
+          }
+
+          if (cp === E_UPPER) {
+            cp = yield;
+
+            if (cp === L_UPPER) {
+              yield * this.chaoticNeutral(this.ELEMENT_DECL());
+              markupBoundary()();
+              continue;
+            }
+
+            if (cp === N_UPPER) {
+              yield * this.chaoticNeutral(this.ENTITY_DECL());
+              markupBoundary()();
+              continue;
+            }
+
+            this._expected(cp, '"LEMENT" or "NTITY"');
+          }
+
+          if (cp === N_UPPER) {
+            yield * this.chaoticNeutral(this.NOTATION_DECL());
+            markupBoundary()();
+            continue;
+          }
+
+          this._expected(
+            cp, '"ATTLIST", "ELEMENT", "ENTITY", "NOTATION", or "--"'
+          );
+        }
+
+        if (cp === QUESTION_MARK) {
+          const targetCPs = [];
+
+          cp = yield * this.oneWhere(isNameStartChar, targetCPs);
+          cp = yield * this.zeroOrMoreWhere(isNameContinueChar, targetCPs);
+
+          if (textDeclPossible && isXMLDeclStart(targetCPs)) {
+            yield * this.oneWhere(isWhitespaceChar, undefined, cp);
+            yield * this.TEXT_DECL();
+            continue;
+          }
+
+          if (isPITarget(targetCPs)) {
+            this.token('PROCESSING_INSTRUCTION_TARGET', targetCPs);
+            yield * this.PROCESSING_INSTRUCTION_VALUE();
+            markupBoundary()();
+            continue;
+          }
+
+          this._expected(cp, 'valid processing instruction target name');
+        }
+
+        this._expected(cp, '"?" or "!"');
+      }
+
+      if (cp === PERCENT_SIGN) {
+        textDeclPossible = false;
+        yield * this.PARAMETER_ENTITY_REFERENCE();
+        continue;
+      }
+
+      this._expected(cp, '"<", "%", or whitespace');
     }
+  }
+
+  // NOTATION DECLARATION //////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Beginning immediately after "<!N".
+
+  * NOTATION_DECL() {
+    // TODO
+  }
+
+  // PARAMETER ENTITY REFERENCE ////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+
+  * PARAMETER_ENTITY_REFERENCE() {
+    const referenceBoundary = this.boundary();
+    const entityCPs = [];
+
+    let cp;
+
+    cp = yield * this.oneWhere(isNameStartChar, entityCPs);
+    cp = yield * this.zeroOrMoreWhere(isNameContinueChar, entityCPs);
+    cp = yield * this.oneIs(SEMICOLON, undefined, cp);
+
+    referenceBoundary()();
+    this.expandEntity('PARAMETER', entityCPs);
   }
 
   // PROCESSING_INSTRUCTION ////////////////////////////////////////////////////

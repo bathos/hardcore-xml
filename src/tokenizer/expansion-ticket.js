@@ -84,6 +84,7 @@ class ExpansionTicket {
 
     this.name = name;
     this.active = true;
+    this.external = false; // May be set to true later.
 
     this.__length__           = 0;
     this.__maxExpansionSize__ = tokenizer.maxExpansionSize;
