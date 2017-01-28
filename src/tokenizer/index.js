@@ -36,8 +36,12 @@ import {
   N_LOWER, N_UPPER, O_LOWER, O_UPPER, ONE, P_UPPER, PARENTHESIS_LEFT,
   PARENTHESIS_RIGHT, PERCENT_SIGN, PERIOD, PIPE, PLUS_SIGN, Q_UPPER,
   QUESTION_MARK, QUOTE_DBL, QUOTE_SNG, R_LOWER, R_UPPER, S_LOWER, S_UPPER,
-  SEMICOLON, SLASH, T_LOWER, T_UPPER, U_UPPER, V_LOWER, X_LOWER, X_UPPER,
+  SEMICOLON, SLASH, SPACE, T_LOWER, T_UPPER, U_UPPER, V_LOWER, X_LOWER, X_UPPER,
   Y_LOWER, Y_UPPER,
+
+  // SPECIAL CASE
+
+  EOF,
 
   // CODEPOINT SEQUENCES
 
@@ -70,7 +74,6 @@ import {
 import entities from '../data/entities';
 
 const CONTEXT_LEN = 30;
-const EOF         = Symbol();
 const GREEN_START = '\u001b[32m';
 const RED_END     = '\u001b[39m';
 const RED_START   = '\u001b[31m';
@@ -169,25 +172,110 @@ class Tokenizer extends Decoder {
 
     const $opts = this._opts = Object.assign({}, DEFAULT_OPTS, opts);
 
-    // Position
+    // USER-PROVIDED DEREFERENCE FUNCTION
+    //
+    // - opts.dereference
+    //
+    //    should be a function that takes (type, info) and returns a
+    //    buffer or stream or a promise that resolves to a buffer or stream.
+    //    The "type" arg is "DTD" or "ENTITY". The info object will have some
+    //    combination of "publicID" and "systemID" properties, and if "systemID"
+    //    is populated, so too will be "systemIDEscaped", which is a URL-encoded
+    //    version of the systemID for convenience. The reason this is
+    //    user-provided is that in typical usage, one does not actually want to
+    //    be fetching arbitrary URIs from the internet when parsing for reasons
+    //    of security and efficiency — most likely you either want to whitelist
+    //    specific URLs, have a caching layer, or keep local DTDs etc which you
+    //    know will be needed; all of this falls outside Hardcore’s domain.
+    //
+    //    Unparsed entities are not dereferenced. We will maintain the reference
+    //    information and it will be available in the resulting AST, but there
+    //    is no reason I can see to dereference these values during parsing.
+
+    this._dereference = opts.dereference;
+
+    // POSITION & CONTEXT
+    //
+    // We maintain knowledge of positional context (line, column) in order to
+    // output informative error messages. Further we keep a buffer (I guess this
+    // is a "ring buffer"?) of recently seen codepoints so we can display the
+    // immediate context preceding an offending codepoint (textContext is the
+    // buffer; textContentIndex is the position of the "first" codepoint).
 
     this.line             = 0;
     this.column           = -1;
     this.textContext      = new Uint32Array(CONTEXT_LEN);
     this.textContextIndex = 0;
 
-    // Entity expansion options and state
+    // ENTITY EXPANSION OPTIONS & STATE
+    //
+    // - opts.maxExpansionCount
+    // - opts.maxExpansionSize
+    //
+    //    These two options (which have default values of 10000 and 20000
+    //    respectively) are upper limits to the total number of expansions which
+    //    may occur while parsing and the total size (in codepoints, not bytes)
+    //    which a single reference (including any references within) may expand
+    //    to. This is important for preventing expansion exploit attacks
+    //    (aka billion laughs), though you can adjust the numbers or, if you
+    //    wanted to disable them, set them to Infinity.
+    //
+    // The "expansionCount" property is incremented with each new expansion.
+    // There is no "expansionSize" property; this would be represented by the
+    // "length" property of specific ExpansionTickets.
+    //
+    // The "activeExpansions" array is a stack (FILO, where the currently
+    // expanding entity is at position zero) of ExpansionTickets.
+    //
+    // The "entities" property is a map of names to objects which represent
+    // declared entities (as well as the implicit general entities like &amp;).
+    // Each of these objects takes the form { cps, publicID, systemID, type }
+    // where "type" may be "GENERAL", "PARAMETER", or "UNPARSED" and "cps" is
+    // the array of codepoints of the replacement text. The cps array is always
+    // defined if the entity is internal (i.e., had a string literal value) and
+    // if it is external, it becomes defined only after it is first
+    // dereferenced. Some combination of the "publicID" and "systemID"
+    // properties will be defined if the entity is external.
+    //
+    // The "__expansionPromise__" is a facet of the somewhat complex control
+    // flow of expansion management, as some expansions may be asynchronous
+    // owing to the fact that external entities are only dereferenced when a
+    // reference actually first occurs. Its value is a promise associated with
+    // whatever is the current deepest expansion underway.
 
     this.entities          = new Map(entities.xml);
     this.expansionCount    = 0;
-    this.expansionSize     = undefined;
     this.maxExpansionCount = $opts.maxExpansionCount;
     this.maxExpansionSize  = $opts.maxExpansionSize;
     this.activeExpansions  = [];
 
-    this.__expansionPromise__ = undefined; // Last deepest expansion promise
+    this.__expansionPromise__ = undefined;
 
-    // Root context
+    // TERMINAL ITERATOR
+    //
+    // - opts.target
+    //
+    //    The possible values for "target" are "document", "extSubset", and
+    //    "extEntity". It is not expected that users provide these values (the
+    //    default is "document"). It indicates the target production. Each of
+    //    these correspond to a state which is both initial and terminal, and
+    //    which understands and expects the "EOF" token.
+    //
+    // The "eat" method is just the "next" function of an instance of the
+    // corresponding target generator. This is what’s cool about using
+    // generators for lexing and parsing: we do not need to maintain global
+    // lexing state beyond this! No element stack, no global accretion arrays,
+    // etc. Generators can *self-describe* hierarchical patterns (XML is not
+    // context free) and state transitions through yield * delegation — it’s all
+    // "free", and any local state is exactly that: local to one or another
+    // generator closure. Though surely this is more expensive than having a
+    // billion explicit one-codepoint state methods & a big mess of stateful
+    // properties smashed onto the instance, the code ends up a lot cleaner &
+    // easier to understand and debug. Generators provide a beautiful,
+    // language-level/first-class representation of exactly what we are trying
+    // to do.
+    //
+    //                    💓💓💓 thank u tc39 💓💓💓
 
     const eater =
       $opts.target === 'document'  ? this.DOCUMENT() :
@@ -203,14 +291,25 @@ class Tokenizer extends Decoder {
 
     this.eat = cp => eater.next(cp);
 
-    // Halt on errors
+    // EVENT HANDLING
+
+    // When an error is emitted, regardless of other handling, we need to halt
+    // all further processing (the tokenizer is now in an invalid state and we
+    // do not attempt any fuzzy recovery stuff — hardcore is strict).
 
     this.on('error', err => {
       console.log(err);
       this.haltAndCatchFire();
     });
 
-    // Token event
+    // Some token events describe information which is meaningful to the
+    // tokenizer itself. Rather than perform these actions at the token emission
+    // "site", we can group them here in a regular event handler so it doesn’t
+    // matter if they may come from more than one pathway (also this helps keep
+    // the amount of "meta" logic in state methods lower). Encoding declarations
+    // must be communicated to the Decoder (well, this is the decoder, but it
+    // needs to call the setXMLEncoding method) and some of the DTD-related
+    // tokens are needed to define entities, etc.
 
     this.on('token', token => {
       console.log(token);
@@ -244,28 +343,58 @@ class Tokenizer extends Decoder {
         }
       }
     });
+
+    // EOF: All terminal states expect an EOF symbol; this is important for
+    // ensuring our terminal state is, in fact, the expected terminal state.
+    // Like any invalid codepoint, it will lead to an error if it occurs in a
+    // position which was not ready to accept it. Further, in the case of
+    // external general or parameter entities, the EOF is needed in order to
+    // ensure the emission of the replacement text token, since that production
+    // has no other delimiter. EOF is represented as an object, by the way, so
+    // that it is unique, truthy, and returns false for all numeric comparisons.
+
+    this.on('finish', () => {
+      this.eat(EOF);
+    });
   }
 
   // INPUT AND OUTPUT //////////////////////////////////////////////////////////
 
   // Called by decoder with each codepoint from input stream — calls eat() but
   // also advances position markers of source text for error reporting. Note
-  // that newlines have already been normalized.
+  // that newlines have already been normalized. (This overwrites the inherited
+  // definition of the codepoint method in Decoder, which is intended mainly for
+  // testing.)
 
   codepoint(cp) {
     this.column++;
+
+    if (cp === 0x00) {
+      // This could be caught alongside any other illegal characters in XML, so
+      // capturing it early is just for my own convenience: I don’t want to have
+      // to worry about falsy CP values, which would force us to change
+      // expressions like "cp || (yield)" to "cp === undefined ? (yield) : cp".
+      // It would be a little too easy to accidentally forget to handle. The
+      // cost is a less informative error message, missing the normal contextual
+      // expectation statement.
+      this._expected(cp, 'a valid XML character, not the NUL character');
+    }
 
     this.eat(cp);
 
     this.textContext[this.textContextIndex] = cp;
     this.textContextIndex = (this.textContextIndex + 1) % CONTEXT_LEN;
 
+    // Note that the decoder has already normalized newline sequences, so we
+    // only need to handle LF:
+
     if (cp === LF) {
       this.line++;
     }
   }
 
-  // Emits a token, serializing the string value if applicable.
+  // Emits a token, serializing the string value if applicable. At the parsing
+  // level, we are finally dealing with strings.
 
   token(type, cps) {
     this.emit('token', {
@@ -321,12 +450,11 @@ class Tokenizer extends Decoder {
     };
   }
 
-  // Called to dereference external entities; returns a promise. Overwritten by
-  // user options.
+  // Called to dereference external entities. It just wraps the user-provided
+  // "opts.dereference" function so that it is always a promise.
 
   dereference(type, data) {
-    // TODO: fake for testing.
-    return Promise.resolve(Buffer.from('<?xml encoding="wat"?>', 'utf8'));
+    return Promise.resolve(this._dereference(type, data));
   }
 
   // Called when an external reference to a DTD is parsed. Execution of the
@@ -369,7 +497,6 @@ class Tokenizer extends Decoder {
         dtdTokenizer.on('error', reject);
 
         dtdTokenizer.on('finish', () => {
-          dtdTokenizer.eat(EOF);
           resolve();
         });
 
@@ -487,17 +614,13 @@ class Tokenizer extends Decoder {
 
         dtdTokenizer.on('error', reject);
 
-        dtdTokenizer.on('finish', () => {
-          dtdTokenizer.eat(EOF);
-        });
-
         if (bufferOrStream instanceof Buffer) {
           dtdTokenizer.end(bufferOrStream);
         } else if (bufferOrStream instanceof Readable) {
           bufferOrStream.pipe(dtdTokenizer);
         }
       }).then(cps => {
-        entity.cps = cps;
+        entity.cps = type === 'GENERAL' ? cps : [ SPACE, ...cps, SPACE ];
         return entity;
       });
     }
@@ -915,7 +1038,6 @@ class Tokenizer extends Decoder {
         }
 
         // root element
-
         if (rootElementPossible) {
           if (isNameStartChar(cp)) {
             doctypeDeclPossible = false;
@@ -1403,10 +1525,13 @@ class Tokenizer extends Decoder {
   // something’ when in fact it’s just illegal junk content. In actual XML,
   // there is no difference at all between "<![CDATA[x]]>" and "x".
   //
-  // CDSect  ::= CDStart CData CDEnd
-  // CDStart ::= '<![CDATA['
-  // CData   ::= (Char* - (Char* ']]>' Char*))
-  // CDEnd   ::= ']]>'
+  // CData    ::= (Char* - (Char* ']]>' Char*))
+  // CDEnd    ::= ']]>'
+  // CDSect   ::= CDStart CData CDEnd
+  // CDStart  ::= '<![CDATA['
+  // CharData ::=    [^<&]* - ([^<&]* ']]>' [^<&]*)
+  // content  ::= CharData?
+  //              ((element | Reference | CDSect | PI | Comment) CharData?)*
 
   * ELEMENT_content() {
     const contentBoundary = this.boundary();

@@ -70,7 +70,7 @@ class Decoder extends Writable {
 
         try {
           for (const cp of this.decode(Buffer.from(this.firstBytes))) {
-            this.emit('codepoint', cp);
+            this.codepoint(cp);
           }
 
           this.firstBytes = [];
