@@ -17,6 +17,7 @@
 export { default as isAttValueCharDbl }   from './is-att-value-char-dbl';
 export { default as isAttValueCharSng }   from './is-att-value-char-sng';
 export { default as isCDATAChar }         from './is-cdata-char';
+export { default as isCDATASectionChar }  from './is-cdata-section-char';
 export { default as isCommentChar }       from './is-comment-char';
 export { default as isDecChar }           from './is-dec-char';
 export { default as isEncContinueChar }   from './is-enc-continue-char';

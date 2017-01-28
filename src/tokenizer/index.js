@@ -8,6 +8,7 @@ import {
   isAttValueCharDbl,
   isAttValueCharSng,
   isCDATAChar,
+  isCDATASectionChar,
   isCommentChar,
   isDecChar,
   isEncContinueChar,
@@ -68,7 +69,11 @@ import {
 
 import entities from '../data/entities';
 
-const EOF = Symbol();
+const CONTEXT_LEN = 30;
+const EOF         = Symbol();
+const GREEN_START = '\u001b[32m';
+const RED_END     = '\u001b[39m';
+const RED_START   = '\u001b[31m';
 
 // MULTI-CP CHECKS /////////////////////////////////////////////////////////////
 
@@ -117,7 +122,7 @@ const seriesFailMsg = (expectedCPs, expectedCP, index) => {
     expectedCPs
       .slice(0, index)
       .filter(cp => cp === expectedCP)
-      .length - 1;
+      .length;
 
   const ordinal =
     !occursMultipleTimes
@@ -166,8 +171,10 @@ class Tokenizer extends Decoder {
 
     // Position
 
-    this.line   = 0;
-    this.column = -1;
+    this.line             = 0;
+    this.column           = -1;
+    this.textContext      = new Uint32Array(CONTEXT_LEN);
+    this.textContextIndex = 0;
 
     // Entity expansion options and state
 
@@ -250,6 +257,9 @@ class Tokenizer extends Decoder {
 
     this.eat(cp);
 
+    this.textContext[this.textContextIndex] = cp;
+    this.textContextIndex = (this.textContextIndex + 1) % CONTEXT_LEN;
+
     if (cp === LF) {
       this.line++;
     }
@@ -267,6 +277,49 @@ class Tokenizer extends Decoder {
   }
 
   // DEREFERENCING & SECONDARY TEXT RESOLUTION /////////////////////////////////
+
+  // Register a "boundary," meaning a context which must either be entirely
+  // inside one entity expansion or entirely outside all entity expansions. It
+  // is called when such a context is entered, and it returns a function which
+  // is called when that context first may have exited. This in turn returns a
+  // function which is called when it is definitely exited, and that either may
+  // be a noop or will throw an error if the boundary was violated by
+  // expansions. With great power comes great responsibilities!
+  //
+  // To see why this is ‘two tiered’, consider the case of expansions which
+  // occur in the element content context. The illegal codepoint would be the
+  // "<" of "</" — but "<" might be legal until we see the "/". So the first
+  // call locks in the correct terminal ticket for "<", and we only call the
+  // second function if it really was "</". Otherwise, &poop;/, where &poop;
+  // ends with "<", would be legal.
+
+  boundary() {
+    const [ boundaryTicket ] = this.activeExpansions;
+
+    return () => {
+      const [ terminalTicket ] = this.activeExpansions;
+
+      return () => {
+        if (boundaryTicket !== terminalTicket) {
+          if (boundaryTicket && boundaryTicket.active) {
+            this._expected(undefined,
+              `that, when dereferencing the ‘${ boundaryTicket.name }’ ` +
+              `entity, it would not violate hierarchical boundaries. A ` +
+              `single entity must not terminate any markup structures which ` +
+              `it did not begin.`
+            );
+          } else {
+            this._expected(undefined,
+              `that, when dereferencing the ‘${ terminalTicket.name }’ ` +
+              `entity, it would not violate hierarchical boundaries. A ` +
+              `single entity must terminate any markup structures that it ` +
+              `begins.`
+            );
+          }
+        }
+      };
+    };
+  }
 
   // Called to dereference external entities; returns a promise. Overwritten by
   // user options.
@@ -456,13 +509,29 @@ class Tokenizer extends Decoder {
   // of what would have been valid (`Expected ${ msg }`).
 
   _expected(cp, msg) {
-    const prefix = cp === EOF
-      ? `Tokenizer input ended abruptly`
-      : `Tokenizer failed at 0x${ cp.toString(16) }`;
+    const prefix =
+      cp === EOF ? `Tokenizer input ended abruptly` :
+      cp         ? `Tokenizer failed at 0x${ cp.toString(16) }` :
+                   `Tokenizer failed.`;
+
+    const context = `${ GREEN_START }${
+      String.fromCodePoint(...[
+        ...this.textContext.slice(this.textContextIndex),
+        ...this.textContext.slice(0, this.textContextIndex)
+      ].filter(Boolean)).replace(/\n/g, ' ')
+    }${ RED_START }`;
+
+    const contextStr =
+      cp === EOF ? `${ context }[EOF]${ RED_END }` :
+      cp         ? `${ context }${ String.fromCodePoint(cp) }${ RED_END }` :
+                   `${ context }[<--]${ RED_END }`;
+
+    const ellipsis = this.textContext.includes(0) ? '' : '[...]';
 
     throw new Error(
-      `${ prefix } (${ String.fromCodePoint(cp) }), line ${ this.line }, ` +
-      `column ${ this.column }. Expected ${ msg }.`
+      `${ prefix }, line ${ this.line }, column ${ this.column }:\n` +
+      `       ${ ellipsis }${ contextStr }\n` +
+      `       Expected ${ msg }.`
     );
   }
 
@@ -848,15 +917,23 @@ class Tokenizer extends Decoder {
         // root element
 
         if (rootElementPossible) {
-          doctypeDeclPossible = false;
-          rootElementPossible = false;
-          xmlDeclPossible     = false;
+          if (isNameStartChar(cp)) {
+            doctypeDeclPossible = false;
+            rootElementPossible = false;
+            xmlDeclPossible     = false;
 
-          yield * this.ELEMENT(cp);
-          continue;
+            yield * this.ELEMENT(cp);
+            continue;
+          }
+
+          this._expected(cp, '"?", "!", or name start character');
         }
 
-        this._expected();
+        if (isNameStartChar(cp)) {
+          this._expected(cp, '"?" or "!"; there can only be one root element');
+        }
+
+        this._expected(cp, '"?" or "!"');
       }
 
       // whitespace
@@ -866,7 +943,7 @@ class Tokenizer extends Decoder {
         cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
       }
 
-      this._expected('whitespace or markup');
+      this._expected(cp, 'whitespace or markup');
     }
   }
 
@@ -1042,7 +1119,7 @@ class Tokenizer extends Decoder {
       }
 
       if (!wsCPs.length) {
-        this._expected('"?>" or whitespace');
+        this._expected(cp, '"?>" or whitespace');
       }
 
       if (encodingPossible && cp === E_LOWER) {
@@ -1122,7 +1199,8 @@ class Tokenizer extends Decoder {
   //
   // Starting from "<" + one name start character, this is the entry to a new
   // element (either a regular open tag or a self-closing element tag). It
-  // captures the following tokens:
+  // captures the following tokens, either directly or through associated
+  // child methods:
   //
   // - ELEM_OPEN_NAME  :: 1
   // - ATTR_KEY        :: 0 or more (always followed by ATTR_VALUE)
@@ -1144,9 +1222,6 @@ class Tokenizer extends Decoder {
   // did not want to permit the zalgo of allowing the same general entity to
   // expand to radically different results depending on context.
   //
-  // >> Attribute    ::= Name Eq AttValue
-  // >> AttValue     ::= '"' ([^<&"] | Reference)* '"'
-  //                   | "'" ([^<&'] | Reference)* "'"
   // >> CharRef      ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
   // >> element      ::= EmptyElemTag | STag content ETag
   // >> EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
@@ -1169,7 +1244,14 @@ class Tokenizer extends Decoder {
       cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, wsCPs, cp);
 
       if (cp === GREATER_THAN) {
-        // TODO
+        yield * this.ELEMENT_content();
+        yield * this.seriesIs([ ...nameCPs ]);
+        yield * this.oneIs(GREATER_THAN, undefined,
+          yield * this.zeroOrMoreWhere(isWhitespaceChar)
+        );
+
+        this.token('ELEM_CLOSE_NAME', nameCPs);
+        return;
       }
 
       if (cp === SLASH) {
@@ -1182,77 +1264,296 @@ class Tokenizer extends Decoder {
         this._expected(cp, '"/>", ">", or whitespace');
       }
 
-      const attrKeyCPs = [];
-
-      cp = yield * this.oneWhere(isNameStartChar, attrKeyCPs, cp);
-      cp = yield * this.zeroOrMoreWhere(isNameContinueChar, attrKeyCPs);
-
-      this.token('ATTR_KEY', attrKeyCPs);
-
-      cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
-      cp = yield * this.oneIs(EQUALS_SIGN, undefined, cp);
-      cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
-
-      const delim = cp;
-      const attrValCPs = [];
-
-      const pred =
-        cp === QUOTE_DBL ? isAttValueCharDbl :
-        cp === QUOTE_SNG ? isAttValueCharSng :
-        undefined;
-
-      if (!pred) {
-        this._expected('quoted attribute value');
-      }
-
-      while (true) {
-        let expansionTicket;
-
-        cp = yield * this.zeroOrMoreWhere(pred, attrValCPs);
-
-        if (cp === delim) {
-          if (expansionTicket && expansionTicket.active) {
-            attrValCPs.push(cp);
-            continue;
-          }
-
-          this.token('ATTR_VALUE', attrValCPs);
-          break;
-        }
-
-        if (cp === AMPERSAND) {
-          cp = yield;
-
-          if (cp === HASH_SIGN) {
-            attrValCPs.push(yield * this.CHARACTER_REFERENCE());
-            continue;
-          }
-
-          if (isNameStartChar(cp)) {
-            const entityCPs = [ cp ];
-
-            cp = yield * this.zeroOrMoreWhere(isNameContinueChar, entityCPs);
-            cp = yield * this.oneIs(SEMICOLON, undefined, cp);
-
-            // Attribute values have slightly different needs from entity
-            // expansions in other contexts, because they are never have
-            // hierarchical results. Therefore we only want to keep a reference
-            // to the outermost expansion.
-
-            const newTicket = this.expandEntity('GENERAL', entityCPs);
-
-            expansionTicket = expansionTicket || newTicket;
-
-            continue;
-          }
-
-          this._expected(cp, '"#" or general entity name');
-        }
-
-        this._expected(cp, 'valid attribute value content');
-      }
+      yield * ELEMENT_attribute(cp);
 
       cp = undefined;
+    }
+  }
+
+  // ELEMENT: Attribute ////////////////////////////////////////////////////////
+  //
+  // :: ✔ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Starting from a character which should be name start, beginning the
+  // attribute key. Will capture two tokens:
+  //
+  // - ATTR_KEY   :: 1
+  // - ATTR_VALUE :: 1
+  //
+  // Note that while the production AttValue may also used in ATTLIST
+  // declarations, this method is specific to appearances in elements because
+  // the treatment of general entity references is different.
+  //
+  // >> Attribute    ::= Name Eq AttValue
+  // >> AttValue     ::= '"' ([^<&"] | Reference)* '"'
+  //                   | "'" ([^<&'] | Reference)* "'"
+
+  * ELEMENT_attribute(cp) {
+    const attrKeyCPs = [];
+    const attrValCPs = [];
+
+    let expansionTicket;
+
+    cp = yield * this.oneWhere(isNameStartChar, attrKeyCPs, cp);
+    cp = yield * this.zeroOrMoreWhere(isNameContinueChar, attrKeyCPs);
+
+    this.token('ATTR_KEY', attrKeyCPs);
+
+    cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
+    cp = yield * this.oneIs(EQUALS_SIGN, undefined, cp);
+    cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+
+    const delim = cp;
+
+    const pred =
+      cp === QUOTE_DBL ? isAttValueCharDbl :
+      cp === QUOTE_SNG ? isAttValueCharSng :
+      undefined;
+
+    if (!pred) {
+      this._expected(cp, 'quoted attribute value');
+    }
+
+    while (true) {
+
+      cp = yield * this.zeroOrMoreWhere(pred, attrValCPs);
+
+      if (cp === delim) {
+        if (expansionTicket && expansionTicket.active) {
+
+          // 4.4.5 Included in Literal
+          //   [...] replacement text must be processed in place of the
+          //   reference itself as though it were part of the document at the
+          //   location the reference was recognized, except that a single or
+          //   double quote character in the replacement text must always be
+          //   treated as a normal data character and must not terminate the
+          //   literal.
+
+          attrValCPs.push(cp);
+          continue;
+        }
+
+        this.token('ATTR_VALUE', attrValCPs);
+        break;
+      }
+
+      if (cp === AMPERSAND) {
+        const referenceBoundary = this.boundary();
+
+        cp = yield;
+
+        if (cp === HASH_SIGN) {
+          attrValCPs.push(yield * this.CHARACTER_REFERENCE());
+          referenceBoundary()();
+          continue;
+        }
+
+        if (isNameStartChar(cp)) {
+          const entityCPs = [ cp ];
+
+          cp = yield * this.zeroOrMoreWhere(isNameContinueChar, entityCPs);
+          cp = yield * this.oneIs(SEMICOLON, undefined, cp);
+
+          referenceBoundary()();
+
+          // Attribute values have slightly different needs from entity
+          // expansions in other contexts, because they are never have
+          // hierarchical results. Therefore we only want to keep a reference
+          // to the outermost expansion.
+
+          const newTicket = this.expandEntity('GENERAL', entityCPs);
+
+          expansionTicket = expansionTicket || newTicket;
+
+          continue;
+        }
+
+        this._expected(cp, '"#" or general entity name');
+      }
+
+      this._expected(cp, 'valid attribute value content');
+    }
+  }
+
+  // ELEMENT: Content //////////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // From the immediately after the ">" of an element open tag. May capture
+  // various tokens from child states, and one directly:
+  //
+  // - CDATA :: 1 or more
+  //
+  // The exit point is immediately after "</", returning control to the parent
+  // ELEMENT state, which will be expecting the original element name.
+  //
+  // CDATA may be only whitespace — normalization and validation of content (and
+  // therefore, whether such a whitespace sequence was or was not actually
+  // CDATA) is not handled at this layer.
+  //
+  // Explicit CDATA sections are just CDATA. They are not unique structures,
+  // only an alternative, explicit syntax for CDATA. HTML hacks have confused a
+  // lot of people about what <![CDATA[ is I think; it seems to the common
+  // assumption is that they represent sequences meant for a secondary
+  // processor — in other words, a processing instruction. HTML, which is not
+  // XML, considers (in most situations) "<![CDATA[" through "]]>" an invalid
+  // sequence, which creates the false impression that it is actually ‘doing
+  // something’ when in fact it’s just illegal junk content. In actual XML,
+  // there is no difference at all between "<![CDATA[x]]>" and "x".
+  //
+  // CDSect  ::= CDStart CData CDEnd
+  // CDStart ::= '<![CDATA['
+  // CData   ::= (Char* - (Char* ']]>' Char*))
+  // CDEnd   ::= ']]>'
+
+  * ELEMENT_content() {
+    const contentBoundary = this.boundary();
+
+    let cp;
+    let cdataCPs = [];
+
+    while (true) {
+      cp = yield * this.zeroOrMoreWhere(isCDATAChar, cdataCPs);
+
+      // the "]]>" sequence in chardata
+
+      if (cp === BRACKET_RIGHT) {
+        const brCPs = [];
+
+        cp = yield * this.oneOrMoreIs(BRACKET_RIGHT, brCPs, cp);
+
+        if (brCPs.length >= 2 && cp === GREATER_THAN) {
+          this._expected(cp,
+            `a legal cdata character other than ">" (the sequence "]]>" ` +
+            `may not appear in cdata)`
+          );
+        }
+
+        cdataCPs.push(...brCPs);
+
+        if (isCDATAChar(cp)) {
+          cdataCPs.push(cp);
+          continue;
+        }
+      }
+
+      // general entity reference
+
+      if (cp === AMPERSAND) {
+        const referenceBoundary = this.boundary();
+
+        cp = yield;
+
+        if (cp === HASH_SIGN) {
+          cdataCPs.push(yield * this.CHARACTER_REFERENCE());
+          referenceBoundary()();
+          continue;
+        }
+
+        if (isNameStartChar(cp)) {
+          const entityCPs = [ cp ];
+
+          cp = yield * this.zeroOrMoreWhere(isNameContinueChar, entityCPs);
+          cp = yield * this.oneIs(SEMICOLON, undefined, cp);
+
+          referenceBoundary()();
+
+          this.expandEntity('GENERAL', entityCPs);
+
+          continue;
+        }
+
+        this._expected(cp, '"#" or general entity name');
+      }
+
+      // markup
+
+      if (cp === LESS_THAN) {
+        const markupBoundary = this.boundary();
+        const wasContentBoundary = contentBoundary();
+
+        cp = yield;
+
+        if (cp === EXCLAMATION_POINT) {
+          cp = yield;
+
+          // comment
+
+          if (cp === HYPHEN) {
+            if (cdataCPs.length) {
+              this.token('CDATA', cdataCPs);
+              cdataCPs = [];
+            }
+
+            yield * this.COMMENT();
+            markupBoundary()();
+            continue;
+          }
+
+          // cdata section
+
+          if (cp === BRACKET_LEFT) {
+            cdataCPs = cdataCPs || [];
+
+            yield * this.seriesIs([ ...CDATA_CPS, BRACKET_LEFT ]);
+
+            while (true) {
+              cp = yield * this.zeroOrMoreWhere(isCDATASectionChar, cdataCPs);
+              cp = yield * this.oneIs(BRACKET_RIGHT, undefined, cp);
+              cp = yield;
+
+              if (cp === BRACKET_RIGHT) {
+                cp = yield;
+
+                if (cp === GREATER_THAN) {
+                  break;
+                }
+
+                cdataCPs.push(BRACKET_RIGHT, BRACKET_RIGHT, cp);
+              } else {
+                cdataCPs.push(BRACKET_RIGHT, BRACKET_RIGHT);
+              }
+            }
+
+            markupBoundary()();
+            continue;
+          }
+        }
+
+        if (cdataCPs.length) {
+          this.token('CDATA', cdataCPs);
+          cdataCPs = [];
+        }
+
+        // processing instruction
+
+        if (cp === QUESTION_MARK) {
+          yield * this.PROCESSING_INSTRUCTION();
+          markupBoundary()();
+          continue;
+        }
+
+        // element close tag
+
+        if (cp === SLASH) {
+          wasContentBoundary();
+          return;
+        }
+
+        // element open tag
+
+        if (isNameStartChar(cp)) {
+          yield * this.ELEMENT(cp);
+          markupBoundary()();
+          continue;
+        }
+
+        this._expected(cp, '"!", "?", "/", or element name');
+      }
+
+      this._expected(cp, 'markup, entity references, or valid chardata');
     }
   }
 
@@ -1419,6 +1720,36 @@ class Tokenizer extends Decoder {
     }
   }
 
+  // PROCESSING_INSTRUCTION ////////////////////////////////////////////////////
+  //
+  // :: ✘ ARGUMENT CP
+  // :: ✘ RETURN CP
+  //
+  // Starting immediately after "<?", this state may be entered from ELEMENT,
+  // and DOCUMENT_doctypeDecl, where we do not need to disambiguate from text or
+  // xml declarations. Will capture one token:
+  //
+  // - PROCESSING_INSTRUCTION_TARGET :: 1
+  //
+  // >> PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+
+  * PROCESSING_INSTRUCTION() {
+    const targetCPs = [];
+
+    let cp;
+
+    yield * this.oneWhere(isNameStartChar, targetCPs);
+    cp = yield * this.zeroOrMoreWhere(isNameContinueChar, targetCPs);
+
+    if (isPITarget(targetCPs)) {
+      this.token('PROCESSING_INSTRUCTION_TARGET', targetCPs);
+      yield * this.PROCESSING_INSTRUCTION_VALUE(cp);
+      return;
+    }
+
+    this._expected(cp, 'valid processing instruction target');
+  }
+
   // PROCESSING_INSTRUCTION_VALUE //////////////////////////////////////////////
   //
   // :: ✔ ARGUMENT CP
@@ -1429,8 +1760,6 @@ class Tokenizer extends Decoder {
   // to disambiguate PROCESSING_INSTRUCTION from an xml/text declaration).
   //
   // - PROCESSING_INSTRUCTION_VALUE :: 0 or 1
-  //
-  // >> PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
 
   * PROCESSING_INSTRUCTION_VALUE(cp) {
     if (cp === QUESTION_MARK) {
