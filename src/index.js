@@ -1,5 +1,5 @@
 export { default as Decoder } from './decoder';
-export { default as Tokenizer } from './tokenizer';
+export { default as Processor } from './processor';
 
 //import { Readable } from 'stream';
 

@@ -305,10 +305,9 @@ class Decoder extends Writable {
       //
       // The default implementation of ‘codepoint’ is to emit a ‘codepoint’
       // event. This is just for the sake of standalone usage, e.g., during
-      // tests. In practice, Decoder will be subclassed to create the tokenizer,
-      // which will provide its own ‘codepoint’ method. This actually ends up
-      // being more efficient than if each ‘layer’ were a siloed stream, anyway.
-      // (No need for intermediary buffers.)
+      // tests. In practice, Decoder will be subclassed by Processor, which will
+      // provide its own ‘codepoint’ method. This ends up sparing us from having
+      // a bunch of intermediary buffers.
 
       const codepoints = this.decode(buffer);
 

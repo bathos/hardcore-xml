@@ -80,6 +80,12 @@ const GREEN_START = '\u001b[32m';
 const RED_END     = '\u001b[39m';
 const RED_START   = '\u001b[31m';
 
+// STANDARD CONTENT PATTERNS ///////////////////////////////////////////////////
+
+export const ANY_CONTENT_PATTERN   = /(?:)/;
+export const CDATA_CONTENT_PATTERN = /^(?: #text)*$/;
+export const EMPTY_CONTENT_PATTERN = /^$/;
+
 // MULTI-CP CHECKS /////////////////////////////////////////////////////////////
 
 // Note that isPITarget and isXMLDeclStart are not inversions of each other.
@@ -137,7 +143,7 @@ const seriesFailMsg = (expectedCPs, expectedCP, index) => {
   return `the ${ ordinal }"${ character }" in "${ expectedString }"`;
 };
 
-// TOKENIZER ///////////////////////////////////////////////////////////////////
+// PROCESSOR ///////////////////////////////////////////////////////////////////
 
 const DEFAULT_OPTS = {
   maxExpansionCount: 10000,
@@ -145,31 +151,21 @@ const DEFAULT_OPTS = {
   target: 'document'
 };
 
-// Some information about the implementation, which stretches the word
-// ‘tokenizer’ pretty far:
+// Generally it’s desireable to distinguish between parsing and lexing and build
+// up the syntactic grammar over the lexical grammar and all that.
 //
-// In a simple, non-conformant XML parser — one that does not concern itself
-// with even general entity expansion (beyond those which are predefined) — it
-// is possible, despite the non-context-free nature of XML at a higher level, to
-// create a clean division between lexing and parsing. You’d still need a little
-// bit of statefulness in the lexer for practical reasons, but not much.
+// I gave up on that idea fairly early on, I’m afraid.
 //
-// This intends to be a non-simple, conformant XML-parser — one that reads and
-// understands DTDs, markup declarations, conditional sections, parameter entity
-// expansion in every weird oriface and general entity expansions that might
-// contain markup in addition to just CDATA...
+// A simple, non-validating XML parser unconcerned with DTDs could do this
+// easily, but things like parameter entity expansion and asynchronously
+// dereferencing external entities that impact further lexing/parsing made
+// maintaining the distinction more complicated than not maintaining it.
 //
-// Someone more clever than myself might see a way to have all these things
-// while still maintaining clean separation between lexing and parsing. I could
-// not. It seemed to me that entity expansion in particular made the the two
-// concepts truly inextricable.
-//
-// That said, at this level we *are* emitting ‘tokens’. That makes it,
-// superficially, kinda lexy, even though inside it’s really parsing syntactic
-// as well as lexical productions.
+// The XML spec itself refers repeatedly to "XML processors", so I used that
+// nomenclature as "Lexer", "Tokenizer", and "Parser" all seemed inappropriate.
 
 export default
-class Tokenizer extends Decoder {
+class Processor extends Decoder {
   constructor(opts={}) {
     super(opts);
 
@@ -185,14 +181,7 @@ class Tokenizer extends Decoder {
     //    combination of "publicID" and "systemID" properties, and if "systemID"
     //    is populated, so too will be "systemIDEncoded", which is a URL-encoded
     //    version of the systemID for convenience. When type is DTD, the "name"
-    //    property will also be provided. The reason this function must be
-    //    supplied by the user is that in typical usage, one does not want to
-    //    be fetching arbitrary URIs from the internet when parsing. For reasons
-    //    of security and efficiency, most likely you either want to whitelist
-    //    specific URLs (with a caching layer), or keep external files which you
-    //    know will be needed on the local system; all of this falls outside
-    //    Hardcore’s domain. (Though I have been considering providing a
-    //    catalogue of common DTDs like SVG, MathML, etc...)
+    //    property will also be provided.
     //
     //    Unparsed entities are not dereferenced. We will maintain the reference
     //    information and it will be available in the resulting AST, but there
@@ -249,13 +238,18 @@ class Tokenizer extends Decoder {
     // reference actually first occurs. Its value is a promise associated with
     // whatever is the current deepest expansion underway.
 
-    this.entities          = new Map(entities.xml);
     this.expansionCount    = 0;
     this.maxExpansionCount = $opts.maxExpansionCount;
     this.maxExpansionSize  = $opts.maxExpansionSize;
     this.activeExpansions  = [];
 
     this.__expansionPromise__ = undefined;
+
+    // REGISTERS
+
+    this.entities  = new Map(entities.xml);
+    this.elements  = new Map();
+    this.notations = new Map();
 
     // TERMINAL ITERATOR
     //
@@ -265,21 +259,18 @@ class Tokenizer extends Decoder {
     //    "extEntity". It is not expected that users provide these values (the
     //    default is "document"). It indicates the target production. Each of
     //    these correspond to a state which is both initial and terminal, and
-    //    which understands and expects the "EOF" token.
+    //    which understands and expects the "EOF" symbol.
     //
     // The "eat" method is just the "next" function of an instance of the
     // corresponding target generator. This is what’s cool about using
-    // generators for lexing and parsing: we do not need to maintain global
-    // lexing state beyond this! No element stack, no global accretion arrays,
-    // etc. Generators can *self-describe* hierarchical patterns (XML is not
-    // context free) and state transitions through yield * delegation — it’s all
-    // "free", and any local state is exactly that: local to one or another
-    // generator closure. Though surely this is more expensive than having a
-    // billion explicit one-codepoint state methods & a big mess of stateful
-    // properties smashed onto the instance, the code ends up a lot cleaner &
-    // easier to understand and debug. Generators provide a beautiful,
-    // language-level/first-class representation of exactly what we are trying
-    // to do.
+    // generators for lexing and parsing: Generators can *self-describe*
+    // hierarchical patterns (XML is not context free) and state transitions
+    // through yield * delegation — it’s all "free", and local state can be
+    // modeled as the contents of that specific closure. Though surely this is
+    // more expensive than having a billion explicit one-codepoint state methods
+    // & a big mess of extra stateful properties smashed onto the instance, the
+    // code ends up cleaner & easier to debug. Generators provided a beautiful,
+    // language-level/first-class representation of the problem space itself.
     //
     //                    💓💓💓 thank u tc39 💓💓💓
 
@@ -300,7 +291,7 @@ class Tokenizer extends Decoder {
     // EVENT HANDLING
 
     // When an error is emitted, regardless of other handling, we need to halt
-    // all further processing (the tokenizer is now in an invalid state and we
+    // all further processing (the processor is now in an invalid state and we
     // do not attempt any fuzzy recovery stuff — hardcore is strict).
 
     this.on('error', err => {
@@ -308,53 +299,12 @@ class Tokenizer extends Decoder {
       this.haltAndCatchFire();
     });
 
-    // Some token events describe information which is meaningful to the
-    // tokenizer itself. Rather than perform these actions at the token emission
-    // "site", we can group them here in a regular event handler so it doesn’t
-    // matter if they may come from more than one pathway (also this helps keep
-    // the amount of "meta" logic in state methods lower). Encoding declarations
-    // must be communicated to the Decoder (well, this is the decoder, but it
-    // needs to call the setXMLEncoding method) and some of the DTD-related
-    // tokens are needed to define entities, etc.
-
-    this.on('token', token => {
-      console.log(token);
-
-      switch (token.type) {
-        case 'DOCTYPE_NAME': {
-          this.doctype = { name: token.value };
-          return;
-        }
-
-        case 'DOCTYPE_PUBLIC_ID': {
-          this.doctype.publicID = token.value;
-          return;
-        }
-
-        case 'DOCTYPE_SYSTEM_ID': {
-          this.doctype.systemID = token.value;
-          return;
-        }
-
-        case 'XML_ENCODING': {
-          if (token.value && !token.external) {
-            try {
-              this.setXMLEncoding(token.value, 'declared');
-            } catch (err) {
-              this.emit('error', err);
-            }
-          }
-          return;
-        }
-      }
-    });
-
     // EOF: All terminal states expect an EOF symbol; this is important for
     // ensuring our terminal state is, in fact, the expected terminal state.
     // Like any invalid codepoint, it will lead to an error if it occurs in a
     // position which was not ready to accept it. Further, in the case of
     // external general or parameter entities, the EOF is needed in order to
-    // ensure the emission of the replacement text token, since that production
+    // ensure the emission of the replacement text event, since that production
     // has no other delimiter. EOF is represented as an object, by the way, so
     // that it is unique, truthy, and returns false for all numeric comparisons.
 
@@ -398,34 +348,14 @@ class Tokenizer extends Decoder {
     }
   }
 
-  // Emits a token, serializing the string value if applicable. At the parsing
-  // level, we are finally dealing with strings.
-
-  token(type, cps) {
-    this.emit('token', {
-      type,
-      value: cps instanceof Array
-        ? String.fromCodePoint(...cps)
-        : cps
-    });
-  }
-
-  // DEREFERENCING & SECONDARY TEXT RESOLUTION /////////////////////////////////
+  // DTD METHODS, DEREFERENCING & SECONDARY TEXT RESOLUTION ////////////////////
 
   // Register a "boundary," meaning a context which must either be entirely
-  // inside one entity expansion or entirely outside all entity expansions. It
-  // is called when such a context is entered, and it returns a function which
-  // is called when that context first may have exited. This in turn returns a
-  // function which is called when it is definitely exited, and that either may
-  // be a noop or will throw an error if the boundary was violated by
-  // expansions. With great power comes great responsibilities!
-  //
-  // To see why this is ‘two tiered’, consider the case of expansions which
-  // occur in the element content context. The illegal codepoint would be the
-  // "<" of "</" — but "<" is plausibly legal until we see the "/". So the first
-  // call locks in the correct terminal ticket for "<", and we only call the
-  // second function if it really was "</". Otherwise, &poop;/, where &poop;
-  // ends with "<", would be legal.
+  // inside one entity expansion or entirely outside all entity expansions. The
+  // function returned, when called, locks in a terminal position but does not
+  // test it — rather it returns a third function that performs the test. This
+  // distinction is important for boundaries where the leading character is
+  // ambiguous until more is seen.
 
   boundary() {
     const [ boundaryTicket ] = this.activeExpansions;
@@ -455,16 +385,7 @@ class Tokenizer extends Decoder {
     };
   }
 
-  // Wraps a state iterator to permit parameter references at nearly any
-  // position. This occurs when we are parsing the expansion of an external
-  // entity reference — it turns into a fucking free-for-all and enforcing
-  // boundary constraints becomes a huge, difficult problem (which helps explain
-  // why the one public DTD validator I could find online actually gets this
-  // wrong and permits illegal boundary crossings in this context).
-  //
-  // This is tentative code — I’m not sure yet if this is really a viable
-  // solution. Kind of crossing my fingers, since the alternatives that come to
-  // mind so far demand a horrifying amount of extra complexity.
+  // Wrapper that switches an iterator into "parameters anywhere" mode.
 
   * chaoticNeutral(iter) {
     const parenBoundaries = [];
@@ -477,29 +398,16 @@ class Tokenizer extends Decoder {
     while (true) {
       cp = yield;
 
-      // When we’re not inside a literal string, a parameter reference is always
-      // legal (even if there is no way it could *really* be legal, owing to the
-      // added space padding).
-
       if (cp === PERCENT_SIGN && !literalDelimiter) {
         yield * this.PARAMETER_ENTITY_REFERENCE();
         continue;
       }
-
-      // If we had a literal delimiter (", ') and match it, we can remove the
-      // ban on special handling of parameter references. Otherwise, this is
-      // the beginning of such a section. Thank god we don’t have to worry about
-      // slash-style escapes.
 
       if (cp === literalDelimiter) {
         literalDelimiter = undefined;
       } else if (cp === QUOTE_DBL || cp === QUOTE_SNG) {
         literalDelimiter = cp;
       }
-
-      // If we are not inside a literal, parentheses represent the other special
-      // case, except these delimiters do not block interior parameter
-      // references — instead they just demand hierarchical balance.
 
       if (!literalDelimiter) {
         if (cp === PARENTHESIS_LEFT) {
@@ -519,15 +427,27 @@ class Tokenizer extends Decoder {
     }
   }
 
-  // Sets an entity definition and makes it available for referencing.
+  declareAttribute(attr) {
+    // TODO
+  }
+
+  declareElement(element) {
+    if (this.elements.has(element.name)) {
+      this._expected(
+        undefined,
+        `the element ${ element.name } to be declared only once`
+      );
+    }
+
+    this.elements.set(element.name, element);
+  }
 
   declareEntity(entity) {
-    if (entity.notation) {
-      // Validity constraint: Notation Declared
-      // TODO — since this constraint requires specifically that the notation
-      // was declared prior to this point, it drags notation declarations,
-      // unfortunately, into the scope of things the tokenizer needs to have
-      // knowledge of.
+    if (entity.notation && !this.notations.has(entity.notation)) {
+      this._expected(
+        undefined,
+        `notation ${ entity.notation } to have been declared`
+      );
     }
 
     if (!this.entities.has(entity.name)) {
@@ -535,103 +455,64 @@ class Tokenizer extends Decoder {
     }
   }
 
-  // Called to dereference external entities. It just wraps the user-provided
-  // "opts.dereference" function so that it is always a promise.
-
   dereference(type, data) {
     return Promise.resolve(this._dereference(type, data));
   }
 
-  // Called when an external reference to a DTD is parsed, but after the
-  // internal DTD is parsed if applicable. Execution of the existing stream is
-  // halted while we await the resolution and parsing of the external DTD, whose
-  // events will be piped in.
-  //
-  // The availability of entities was a point of confusion for me. The spec
-  // indicates that an internal subset must be parsed first before an external
-  // subset, which is consistent with these facts:
-  //
-  // 1. The first declaration of an entity takes precedence
-  // 2. Examples demonstrate using the internal DTD to define parameter entities
-  //    which affect the processing of the external DTD — indeed, this is what
-  //    makes them ‘parameter’ entities.
-  //
-  // But what had me confused for a while was this:
-  //
-  // 2.8 Prolog and Document Type Declaration
-  //   [...] Like the internal subset, the external subset and any external
-  //   parameter entities referenced in a DeclSep must consist of a series of
-  //   complete markup declarations of the types allowed by the non-terminal
-  //   symbol markupdecl, interspersed with white space or parameter-entity
-  //   references. However, portions of the contents of the external subset or
-  //   of these external parameter entities may conditionally be ignored by
-  //   using the conditional section construct; this is not allowed in the
-  //   internal subset but is allowed in external parameter entities referenced
-  //   in the internal subset.
-  //
-  // Note the last clause. This led me to believe that entities declared in an
-  // external subset were somehow available to the internal DTD, even though
-  // this could lead to paradoxes like entities whose replacement text
-  // successfully redefined the same entity. But on re-reading it a few times,
-  // it finally clicked that the "external parameter entities" they are
-  // describing are those which are declared in the internal subset but happen
-  // to have an external source — not entities *declared* externally, which are
-  // indeed unavailable back at home. At least, that’s my best understanding at
-  // the moment!
-  //
-  // Ultimately though it just means we need to provide a copy of our ‘entity
-  // directory’ to the external subset. I’m unclear still on whether we need to
-  // do the same for notations — I suspect we do (TODO), but I don’t think it’s
-  // necessary to share ELEMENT or ATTLIST stuff at least.
-
-  dereferenceDTD() {
-    if (!this.doctype || !this.doctype.systemID) {
+  dereferenceDTD(doctype) {
+    if (!doctype.systemID) {
       return;
     }
 
     this.haltAndCatchFire();
 
-    const { doctype } = this;
-
     this
       .dereference('DTD', {
-        name: doctype.name,
-        publicID: doctype.publicID,
-        systemID: doctype.systemID,
-        systemIDEncoded: doctype.systemID && encodeURI(doctype.systemID)
+        name:            doctype.name,
+        publicID:        doctype.publicID,
+        systemID:        doctype.systemID,
+        systemIDEncoded: encodeURI(doctype.systemID)
       })
       .then(bufferOrStream => new Promise((resolve, reject) => {
-        const dtdTokenizer = new Tokenizer(Object.assign({}, this._opts, {
+        const interceptor = this;
+
+        const Intercepted = class extends Processor {
+          declareAttribute(attr) {
+            super.declareAttribute(attr);
+            interceptor.declareAttribute(attr);
+          }
+
+          declareElement(element) {
+            super.declareElement(element);
+            interceptor.declareElement(element);
+          }
+
+          declareEntity(entity) {
+            super.declareEntity(entity);
+            interceptor.declareEntity(entity);
+          }
+
+          declareNotation(notation) {
+            super.declareNotation(notation);
+            interceptor.declareNotation(notation);
+          }
+        }
+
+        const dtdProcessor = new Intercepted(Object.assign({}, this._opts, {
           target: 'extSubset'
         }));
 
-        dtdTokenizer.entities  = new Map(this.entities);
+        dtdProcessor.elements  = new Map(this.elements);
+        dtdProcessor.entities  = new Map(this.entities);
+        dtdProcessor.notations = new Map(this.notations);
 
-        dtdTokenizer.on('token', token => {
-          if (token.type === 'XML_VERSION' || token.type === 'XML_ENCODING') {
-            // These are ‘local’ events to the external DTD; they will not be
-            // piped upwards.
-            return;
-          }
-
-          // We will sometimes need to distinguish between tokens whose source
-          // was local to the current target vs those brought in externally:
-
-          token.external = true;
-
-          this.emit('token', token);
-        });
-
-        dtdTokenizer.on('error', reject);
-
-        dtdTokenizer.on('finish', () => {
-          resolve();
-        });
+        dtdProcessor.on('error', reject);
+        dtdProcessor.on('finish', resolve);
 
         if (bufferOrStream instanceof Buffer) {
-          dtdTokenizer.end(bufferOrStream);
+          dtdProcessor.end(bufferOrStream);
         } else if (bufferOrStream instanceof Readable) {
-          bufferOrStream.pipe(dtdTokenizer);
+          bufferOrStream.pipe(dtdProcessor);
         }
       }))
       .then(() => {
@@ -642,21 +523,11 @@ class Tokenizer extends Decoder {
       });
   }
 
-  // Given the CPs of an entity name, begins providing the replacement text and
-  // returns an ‘expansion ticket’ representing the status of that expansion,
-  // for use within the calling context to ensure boundary constraints are
-  // satisfied by the result.
-
   expandEntity(type, entityCPs) {
     this.haltAndCatchFire();
 
     const entityName = String.fromCodePoint(...entityCPs);
     const expansionTicket = new ExpansionTicket(entityName, this);
-
-    // Managing flow here is non-trivial. Expansions can include other
-    // expansions, which may in turn need to resolve external resources
-    // asynchronously, thereby halting our secondary iteration for a tertiary
-    // iteration, and so on.
 
     const expansionPromise = this.__expansionPromise__ = this
       .resolveEntityText(type, entityName)
@@ -704,9 +575,6 @@ class Tokenizer extends Decoder {
     return expansionTicket;
   }
 
-  // For a given type (GENERAL or PARAMETER), returns a promise which will
-  // resolve to the codepoints of the replacement text.
-
   resolveEntityText(type, name) {
     if (!this.entities.has(name)) {
       return Promise.reject(new Error(`Entity ${ name } was never declared.`));
@@ -720,12 +588,6 @@ class Tokenizer extends Decoder {
       ));
     }
 
-    // If this is the first time we are accessing this entity, and it was an
-    // external reference, then we must fetch the external reference (otherwise
-    // the cps property will already be defined). In the case of entities which
-    // has a literal ENTITY VALUE string, cps will always already be defined as
-    // an artifact of having been parsed in the first place.
-
     if (entity.cps) {
       return Promise.resolve(entity);
     } else {
@@ -734,31 +596,27 @@ class Tokenizer extends Decoder {
         systemID: entity.systemID,
         systemIDEncoded: entity.systemID && encodeURI(entity.systemID)
       }).then(bufferOrStream => {
-        const dtdTokenizer = new Tokenizer(Object.assign({}, this._opts, {
+        const entProcessor = new Processor(Object.assign({}, this._opts, {
           target: 'extEntity'
         }));
 
-        dtdTokenizer.on('token', token => {
-          // We do not pipe through any tokens from external entities, but we do
-          // need to pick up the REPLACEMENT_TEXT token.
-
-          if (token.type === 'REPLACEMENT_TEXT') {
-            resolve(token.value);
-          }
-        });
-
-        dtdTokenizer.on('error', reject);
+        entProcessor.on('REPLACEMENT_TEXT', resolve);
+        entProcessor.on('error', reject);
 
         if (bufferOrStream instanceof Buffer) {
-          dtdTokenizer.end(bufferOrStream);
+          entProcessor.end(bufferOrStream);
         } else if (bufferOrStream instanceof Readable) {
-          bufferOrStream.pipe(dtdTokenizer);
+          bufferOrStream.pipe(entProcessor);
         }
       }).then(cps => {
         entity.cps = cps;
         return entity;
       });
     }
+  }
+
+  setStandalone(standalone) {
+    // TODO
   }
 
   // ERROR BARFING /////////////////////////////////////////////////////////////
@@ -768,9 +626,9 @@ class Tokenizer extends Decoder {
 
   _expected(cp, msg) {
     const prefix =
-      cp === EOF ? `Tokenizer input ended abruptly` :
-      cp         ? `Tokenizer failed at 0x${ cp.toString(16) }` :
-                   `Tokenizer failed`;
+      cp === EOF ? `Hardcore processor input ended abruptly` :
+      cp         ? `Hardcore processor failed at 0x${ cp.toString(16) }` :
+                   `Hardcore processor failed`;
 
     const context = `${ GREEN_START }${
       String.fromCodePoint(...[
@@ -797,13 +655,11 @@ class Tokenizer extends Decoder {
   //
   // These generators abstract away common matching operations needed in lexing
   // logic. They are composeable, such that you can nest a series of them one
-  // inside the other. This pattern allows the actual tokenization state methods
-  // to be focused on logic that is either about:
+  // inside the other. This pattern allows the actual state methods to be
+  // focused on logic that is either about:
   //
-  // - disjunctions (branching), where the next pathway depends on the last CP
-  //   which was seen
-  // - meta-poop, like emitting tokens, expanding entities, and applying
-  //   constraints that cannot be readily described by these patterns
+  // - disjunctions or
+  // - meta-poop like node assembly
   //
   // All of these methods take four arguments:
   //
@@ -1011,10 +867,11 @@ class Tokenizer extends Decoder {
 
   // ATTLIST DECLARATION ///////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  // Beginning immediately after "<!A".
+  // Beginning immediately after "<!A". Registers one or more attribute
+  // definitions associated with a declared element.
 
   * ATTLIST_DECL() {
     // TODO
@@ -1022,20 +879,10 @@ class Tokenizer extends Decoder {
 
   // CHARACTER REFERENCE ///////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✔ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✔ RETURNS RESOLVED CP
   //
   // Beginning immediately after "&#".
-  //
-  // This is a somewhat special case: the returned codepoint is not a greediness
-  // artifact, but rather the value resolved from the character reference.
-  //
-  // Excepting occurrences within the EXT_ENTITY state, any time a character
-  // reference is encountered legally it is immediately transformed into the
-  // value being escaped. This contrasts with how general entities work, as they
-  // are not resolved as references until the time of in-document usage.
-  //
-  // >> CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
 
   * CHARACTER_REFERENCE() {
     let cp = yield;
@@ -1064,19 +911,10 @@ class Tokenizer extends Decoder {
 
   // COMMENT ///////////////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ RETURNS RAW COMMENT NODE
   //
-  // Starting from immediately after "<!-". Entered from various states.
-  // Captures a single token:
-  //
-  // - COMMENT :: 1 (no delimiters)
-  //
-  // Note that it is not an error that "--" is considered terminal in all cases.
-  // While it would seemingly be unambiguous if "--foo" appeared in comment
-  // content, this constraint is nonetheless indicated by the grammar.
-  //
-  // Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+  // Starting from immediately after "<!-".
 
   * COMMENT() {
     const commentCPs = [];
@@ -1090,8 +928,12 @@ class Tokenizer extends Decoder {
 
       if (cp === HYPHEN) {
         cp = yield * this.oneIs(GREATER_THAN);
-        this.token('COMMENT', commentCPs);
-        return;
+
+        return {
+          content: String.fromCodePoint(...commentCPs),
+          type: 'COMMENT'
+        };
+
       } else {
         cp = yield * this.oneWhere(isCommentChar, commentCPs, cp);
       }
@@ -1100,8 +942,8 @@ class Tokenizer extends Decoder {
 
   // CONDITIONAL SECTION ///////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
   // Starting immediately after "<![".
 
@@ -1111,26 +953,23 @@ class Tokenizer extends Decoder {
 
   // DOCUMENT //////////////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
   //           ✨✨✨✨ TARGET STATE — UNDERSTANDS EOF ✨✨✨✨
   //
-  // DOCUMENT is an entry state which takes no initial codepoint and understands
-  // the EOF symbol. Directly captures only one token:
-  //
-  // - PROCESSING_INSTRUCTION_TARGET :: *
-  //
-  // >> document ::= prolog element Misc*
-  // >> Misc     ::= Comment | PI | S
-  // >> prolog   ::= XMLDecl? Misc* (doctypedecl Misc*)?
-  // >> S        ::= (#x20 | #x9 | #xD | #xA)+
+  // Emits 'DOCUMENT' event.
 
   * DOCUMENT() {
     let xmlDeclPossible     = true;
     let doctypeDeclPossible = true;
     let rootElementPossible = true;
     let cp;
+
+    const document = {
+      children: [],
+      type: 'DOCUMENT'
+    };
 
     while (true) {
       cp = xmlDeclPossible
@@ -1144,6 +983,8 @@ class Tokenizer extends Decoder {
           this._expected(cp, 'document element');
         }
 
+        this.emit('DOCUMENT', document);
+        console.log(document)
         return;
       }
 
@@ -1158,13 +999,13 @@ class Tokenizer extends Decoder {
           cp = yield;
 
           if (cp === HYPHEN) {
-            yield * this.COMMENT();
+            document.children.push(yield * this.COMMENT());
             continue;
           }
 
           if (doctypeDeclPossible) {
             if (cp === D_UPPER) {
-              yield * this.DOCUMENT_doctypeDecl();
+              document.doctype = yield * this.DOCUMENT_doctypeDecl();
               continue;
             }
 
@@ -1191,8 +1032,12 @@ class Tokenizer extends Decoder {
             this._expected(cp, 'PI target not to be "xml" (case insensitive)');
           }
 
-          this.token('PROCESSING_INSTRUCTION_TARGET', targetCPs);
-          yield * this.PROCESSING_INSTRUCTION_VALUE(cp);
+          document.children.push({
+            type: 'PROCESSING_INSTRUCTION',
+            target: String.fromCodePoint(...targetCPs),
+            value: yield * this.PROCESSING_INSTRUCTION_VALUE(cp)
+          });
+
           continue;
         }
 
@@ -1202,8 +1047,7 @@ class Tokenizer extends Decoder {
             doctypeDeclPossible = false;
             rootElementPossible = false;
             xmlDeclPossible     = false;
-
-            yield * this.ELEMENT(cp);
+            document.children.push(yield * this.ELEMENT(cp));
             continue;
           }
 
@@ -1233,24 +1077,7 @@ class Tokenizer extends Decoder {
   // :: ✘ ARGUMENT CP
   // :: ✘ RETURN CP
   //
-  // Child of document, this state begins immediately after "<!D". Directly, it
-  // can capture:
-  //
-  // - DOCTYPE_NAME :: 1
-  // - DOCTYPE_SYSTEM_ID: 0 or 1
-  // - DOCTYPE_PUBLIC_ID: 0 or 1
-  //
-  // The DTD is the source of all the world’s zalgo. It is is a hellgate to a
-  // seething, hateful, alien dimension.
-  //
-  // DeclSep       ::= PEReference | S
-  // doctypedecl   ::= '<!DOCTYPE' S Name (S ExternalID)? S?
-  //                   ('[' intSubset ']' S?)? '>'
-  // ExternalID    ::= 'SYSTEM' S SystemLiteral |
-  //                   'PUBLIC' S PubidLiteral S SystemLiteral
-  // PubidChar     ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
-  // PubidLiteral  ::= '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
-  // SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
+  // Child of document, this state begins immediately after "<!D".
 
   * DOCUMENT_doctypeDecl() {
     let externalIDPossible = true;
@@ -1267,14 +1094,16 @@ class Tokenizer extends Decoder {
     cp = yield * this.zeroOrMoreWhere(isNameContinueChar, nameCPs);
     cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
 
-    this.token('DOCTYPE_NAME', nameCPs);
+    const doctype = {
+      name: String.fromCodePoint(...nameCPs)
+    };
 
     while (true) {
       // terminus
 
       if (cp === GREATER_THAN) {
-        this.dereferenceDTD();
-        return;
+        this.dereferenceDTD(doctype);
+        return doctype;
       }
 
       // internal subset
@@ -1328,7 +1157,7 @@ class Tokenizer extends Decoder {
 
         cp = yield * this.oneOrMoreWhere(pred, publicIDCPs);
 
-        this.token('DOCTYPE_PUBLIC_ID', publicIDCPs);
+        doctype.publicID = String.fromCodePoint(...publicIDCPs);
 
         if (cp !== delimiter) {
           this._expected(cp, 'matching quotation mark after public ID');
@@ -1354,7 +1183,7 @@ class Tokenizer extends Decoder {
 
       cp = yield * this.oneOrMoreWhere(pred, systemIDCPs);
 
-      this.token('DOCTYPE_SYSTEM_ID', systemIDCPs);
+      doctype.systemID = String.fromCodePoint(...systemIDCPs);
 
       if (cp !== delimiter) {
         this._expected(cp, 'matching quotation mark after system ID');
@@ -1480,20 +1309,10 @@ class Tokenizer extends Decoder {
 
   // DOCUMENT: XML Declaration /////////////////////////////////////////////////
   //
-  // :: ✔ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✔ ARG: INITIAL CP
+  // :: ✘ NO RETURN VALUE
   //
-  // Starting from "<?xml" + one cp which is not name continue. Through child
-  // states, captures the following tokens:
-  //
-  // - XML_VERSION    :: 1
-  // - XML_ENCODING   :: 0 or 1
-  // - XML_STANDALONE :: 0 or 1
-  //
-  // Note that it is a distinct production from the text declaration which
-  // appears in external entities.
-  //
-  // >> XMLDecl      ::= '<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
+  // Starting from "<?xml" + one cp which is not name continue.
 
   * DOCUMENT_xmlDecl(cp) {
     let encodingPossible   = true;
@@ -1544,16 +1363,10 @@ class Tokenizer extends Decoder {
 
   // DOCUMENT: XML Declaration: Standalone /////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  // Starting after the "s" of "standalone". Captures the following token:
-  //
-  // - XML_STANDALONE :: 1
-  //
-  // >> SDDecl ::= S 'standalone' Eq
-  //               ( ( "'" ( 'yes' | 'no' ) "'" )
-  //               | ( '"' ( 'yes' | 'no' ) '"' ) )
+  // Starting after the "s" of "standalone". Sets standalone state.
 
   * DOCUMENT_xmlDecl_standalone() {
     let cp;
@@ -1581,49 +1394,17 @@ class Tokenizer extends Decoder {
     }
 
     yield * this.seriesIs(series, undefined, cp);
-
-    this.token('XML_STANDALONE', series);
-
     yield * this.oneIs(delimiter);
+
+    this.setStandalone(series === YES_CPS);
   }
 
   // ELEMENT ///////////////////////////////////////////////////////////////////
   //
-  // :: ✔ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✔ ARG: INITIAL CP
+  // :: ✔ RETURNS RAW ELEMENT NODE
   //
-  // Starting from "<" + one name start character, this is the entry to a new
-  // element (either a regular open tag or a self-closing element tag). It
-  // captures the following tokens, either directly or through associated
-  // child methods:
-  //
-  // - ELEM_OPEN_NAME  :: 1
-  // - ATTR_KEY        :: 0 or more (always followed by ATTR_VALUE)
-  // - ATTR_VALUE      :: 0 or more
-  // - ELEM_CLOSE_NAME :: 0 or 1 (if self-closing)
-  //
-  // In addition, resolution of character references and expansion of general
-  // entity references may occur during the processing of attribute values,
-  // though in the latter case, special constraints are applied which would not
-  // be applicable if the expansion were occurring in CDATA. Specifically, any
-  // delimiting quotation character is "coerced" to its CDATA value regardless
-  // of whether it would have been that or not according to normal rules. When
-  // combined with the fact that "<" is an illegal character in attribute
-  // values, the cumulative effect is that no general entity whose content would
-  // have included non-CDATA were it dispatched in a CDATA context can ever be
-  // validly used in an attribute value. This seems kind of clever to me — I’d
-  // always wondered why "<" was illegal in attribute values, where it seemingly
-  // would be unambiguously chardata; I think this explains it, they probably
-  // did not want to permit the zalgo of allowing the same general entity to
-  // expand to radically different results depending on context.
-  //
-  // >> CharRef      ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
-  // >> element      ::= EmptyElemTag | STag content ETag
-  // >> EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
-  // >> EntityRef    ::= '&' Name ';'
-  // >> ETag         ::= '</' Name S? '>'
-  // >> Reference    ::= EntityRef | CharRef
-  // >> STag         ::= '<' Name (S Attribute)* S? '>'
+  // Starting from "<" + one name start character.
 
   * ELEMENT(cp) {
     const nameCPs = [];
@@ -1631,7 +1412,11 @@ class Tokenizer extends Decoder {
     cp = yield * this.oneWhere(isNameStartChar, nameCPs, cp);
     cp = yield * this.zeroOrMoreWhere(isNameContinueChar, nameCPs, cp);
 
-    this.token('ELEM_OPEN_NAME', nameCPs);
+    const element = {
+      attr: {},
+      name: String.fromCodePoint(...nameCPs),
+      type: 'ELEMENT'
+    };
 
     while (true) {
       const wsCPs = [];
@@ -1639,27 +1424,26 @@ class Tokenizer extends Decoder {
       cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, wsCPs, cp);
 
       if (cp === GREATER_THAN) {
-        yield * this.ELEMENT_content();
+        element.children = yield * this.ELEMENT_content();
+
         yield * this.seriesIs([ ...nameCPs ]);
         yield * this.oneIs(GREATER_THAN, undefined,
           yield * this.zeroOrMoreWhere(isWhitespaceChar)
         );
 
-        this.token('ELEM_CLOSE_NAME', nameCPs);
-        return;
+        return element;
       }
 
       if (cp === SLASH) {
         yield * this.oneIs(GREATER_THAN);
-        this.token('ELEM_CLOSE_NAME', nameCPs);
-        return;
+        return element;
       }
 
       if (!wsCPs.length) {
         this._expected(cp, '"/>", ">", or whitespace');
       }
 
-      yield * ELEMENT_attribute(cp);
+      yield * this.ELEMENT_attribute(cp, element.attr);
 
       cp = undefined;
     }
@@ -1667,24 +1451,13 @@ class Tokenizer extends Decoder {
 
   // ELEMENT: Attribute ////////////////////////////////////////////////////////
   //
-  // :: ✔ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✔ ARGS: INITIAL CP, RAW ELEMENT ATTR
+  // :: ✘ NO RETURN VALUE
   //
   // Starting from a character which should be name start, beginning the
-  // attribute key. Will capture two tokens:
-  //
-  // - ATTR_KEY   :: 1
-  // - ATTR_VALUE :: 1
-  //
-  // Note that while the production AttValue may also used in ATTLIST
-  // declarations, this method is specific to appearances in elements because
-  // the treatment of general entity references is different.
-  //
-  // >> Attribute    ::= Name Eq AttValue
-  // >> AttValue     ::= '"' ([^<&"] | Reference)* '"'
-  //                   | "'" ([^<&'] | Reference)* "'"
+  // attribute key.
 
-  * ELEMENT_attribute(cp) {
+  * ELEMENT_attribute(cp, attr) {
     const attrKeyCPs = [];
     const attrValCPs = [];
 
@@ -1693,7 +1466,11 @@ class Tokenizer extends Decoder {
     cp = yield * this.oneWhere(isNameStartChar, attrKeyCPs, cp);
     cp = yield * this.zeroOrMoreWhere(isNameContinueChar, attrKeyCPs);
 
-    this.token('ATTR_KEY', attrKeyCPs);
+    const key = String.fromCodePoint(...attrKeyCPs);
+
+    if (key in attr) {
+      this._expected(cp, `attribute ${ key } not to be appear twice`);
+    }
 
     cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
     cp = yield * this.oneIs(EQUALS_SIGN, undefined, cp);
@@ -1729,7 +1506,7 @@ class Tokenizer extends Decoder {
           continue;
         }
 
-        this.token('ATTR_VALUE', attrValCPs);
+        attr[key] = String.fromCodePoint(...attrValCPs);
         break;
       }
 
@@ -1773,41 +1550,14 @@ class Tokenizer extends Decoder {
 
   // ELEMENT: Content //////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✔ RETURNS CONTENT ARRAY
   //
-  // From the immediately after the ">" of an element open tag. May capture
-  // various tokens from child states, and one directly:
-  //
-  // - CDATA :: 1 or more
-  //
-  // The exit point is immediately after "</", returning control to the parent
-  // ELEMENT state, which will be expecting the original element name.
-  //
-  // CDATA may be only whitespace — normalization and validation of content (and
-  // therefore, whether such a whitespace sequence was or was not actually
-  // CDATA) is not handled at this layer.
-  //
-  // Explicit CDATA sections are just CDATA. They are not unique structures,
-  // only an alternative, explicit syntax for CDATA. HTML hacks have confused a
-  // lot of people about what <![CDATA[ is I think; it seems to the common
-  // assumption is that they represent sequences meant for a secondary
-  // processor — in other words, a processing instruction. HTML, which is not
-  // XML, considers (in most situations) "<![CDATA[" through "]]>" an invalid
-  // sequence, which creates the false impression that it is actually ‘doing
-  // something’ when in fact it’s just illegal junk content. In actual XML,
-  // there is no difference at all between "<![CDATA[x]]>" and "x".
-  //
-  // CData    ::= (Char* - (Char* ']]>' Char*))
-  // CDEnd    ::= ']]>'
-  // CDSect   ::= CDStart CData CDEnd
-  // CDStart  ::= '<![CDATA['
-  // CharData ::=    [^<&]* - ([^<&]* ']]>' [^<&]*)
-  // content  ::= CharData?
-  //              ((element | Reference | CDSect | PI | Comment) CharData?)*
+  // From the immediately after the ">" of an element open tag.
 
   * ELEMENT_content() {
     const contentBoundary = this.boundary();
+    const content = [];
 
     let cp;
     let cdataCPs = [];
@@ -1881,11 +1631,14 @@ class Tokenizer extends Decoder {
 
           if (cp === HYPHEN) {
             if (cdataCPs.length) {
-              this.token('CDATA', cdataCPs);
+              content.push({
+                text: String.fromCodePoint(...cdataCPs),
+                type: 'CDATA'
+              });
               cdataCPs = [];
             }
 
-            yield * this.COMMENT();
+            content.push(yield * this.COMMENT());
             markupBoundary()();
             continue;
           }
@@ -1921,14 +1674,17 @@ class Tokenizer extends Decoder {
         }
 
         if (cdataCPs.length) {
-          this.token('CDATA', cdataCPs);
+          content.push({
+            text: String.fromCodePoint(...cdataCPs),
+            type: 'CDATA'
+          });
           cdataCPs = [];
         }
 
         // processing instruction
 
         if (cp === QUESTION_MARK) {
-          yield * this.PROCESSING_INSTRUCTION();
+          content.push(yield * this.PROCESSING_INSTRUCTION());
           markupBoundary()();
           continue;
         }
@@ -1943,7 +1699,7 @@ class Tokenizer extends Decoder {
         // element open tag
 
         if (isNameStartChar(cp)) {
-          yield * this.ELEMENT(cp);
+          content.push(yield * this.ELEMENT(cp));
           markupBoundary()();
           continue;
         }
@@ -1957,33 +1713,234 @@ class Tokenizer extends Decoder {
 
   // ELEMENT DECLARATION ///////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  // Beginning immediately after "<!EL".
+  // Beginning immediately after "<!EL". The assembled definition will be
+  // registered with declareElement().
 
   * ELEMENT_DECL() {
-    // TODO
+    let cp;
+
+    const element = {};
+    const nameCPs = [];
+
+    cp = yield * this.seriesIs(EMENT_CPS);
+    cp = yield * this.oneOrMoreWhere(isWhitespaceChar);
+    cp = yield * this.oneWhere(isNameStartChar, nameCPs, cp);
+    cp = yield * this.zeroOrMoreWhere(isNameContinueChar, nameCPs);
+    cp = yield * this.oneOrMoreWhere(isWhitespaceChar, undefined, cp);
+
+    element.name = String.fromCodePoint(...nameCPs);
+
+    switch (cp) {
+      case A_UPPER:
+        element.contentType        = 'any';
+        element.contentPattern     = ANY_CONTENT_PATTERN;
+        element.mayContainCDATA    = true;
+        element.mayContainElements = true;
+        element.permittedElements  = { has: () => true };
+        cp = yield * this.seriesIs(ANY_CPS, undefined, cp);
+        cp = yield;
+        break;
+
+      case E_UPPER:
+        element.contentType        = 'empty';
+        element.contentPattern     = EMPTY_CONTENT_PATTERN;
+        element.mayContainCDATA    = false;
+        element.mayContainElements = false;
+        element.permittedElements  = { has: () => false };
+        cp = yield * this.seriesIs(EMPTY_CPS, undefined, cp);
+        cp = yield;
+        break;
+
+      case PARENTHESIS_LEFT:
+        cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+
+        if (cp === HASH_SIGN) {
+          element.contentType        = 'mixed';
+          element.mayContainCDATA    = true;
+          element.mayContainElements = true;
+          element.permittedElements  = new Set();
+
+          cp = yield * this.seriesIs(PCDATA_CPS, undefined, cp);
+
+          while (true) {
+            cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
+
+            if (cp === PARENTHESIS_RIGHT) {
+              if (element.permittedElements.size) {
+                yield * this.oneIs(ASTERISK);
+              }
+
+              cp = yield;
+              break;
+            }
+
+            if (cp === PIPE) {
+              const nameCPs = [];
+
+              cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+              cp = yield * this.oneWhere(isNameStartChar, nameCPs, cp);
+              cp = yield * this.zeroOrMoreWhere(isNameContinueChar, nameCPs);
+
+              // 3.2.2 Mixed Content >> VC: No Duplicate Types
+
+              const name = String.fromCodePoint(...nameCPs);
+
+              if (element.permittedElements.has(name)) {
+                this._expected(cp, `name ${ name } to be unique`);
+              }
+
+              element.permittedElements.add(name);
+            }
+          }
+
+          if (element.permittedElements.size) {
+            const elems = [ ...element.permittedElements ];
+            const src   = `^( (#text|${ elems.join('|') }))*$`;
+
+            element.contentPattern = new RegExp(src);
+          } else {
+            element.contentPattern = CDATA_CONTENT_PATTERN;
+          }
+        } else if (cp === PARENTHESIS_LEFT || isNameStartChar(cp)) {
+          element.contentType        = 'children';
+          element.mayContainCDATA    = false;
+          element.mayContainElements = true;
+
+          const res = yield * this.ELEMENT_DECL_children(cp);
+
+          element.contentPattern    = new RegExp(`^${ res.pattern }$`);
+          element.permittedElements = res.permittedElements;
+
+          cp = res.cp;
+        } else {
+          this._expected(cp, '"(", "#PCDATA, or an element name');
+        }
+
+        break;
+      default:
+        this._expected(cp, '"ANY", "EMPTY", or "("');
+    }
+
+    cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
+    cp = yield * this.oneIs(GREATER_THAN, undefined, cp);
+
+    this.declareElement(element);
+  }
+
+  // ELEMENT DECLARATION: Children /////////////////////////////////////////////
+  //
+  // :: ✔ ARGUMENT: INITIAL CP
+  // :: ✔ RETURNS OBJECT { cp, pattern, permittedElements }
+  //
+  // Right after the opening "(" and any whitespace, with a cp that is not "#".
+  // This can be from the first "(" or a child "(".
+  //
+  // The return value is an object of the form:
+  //  {
+  //    pattern: string which will become part of regular expression
+  //    permittedElements: set of element names
+  //    cp: greed artifact
+  //  }
+
+  * ELEMENT_DECL_children(cp) {
+    const patternMembers = [];
+
+    let permittedElements = new Set();
+    let type;
+
+    while (true) {
+      if (cp === PARENTHESIS_LEFT) {
+        const res = yield * this.ELEMENT_DECL_children(yield);
+
+        permittedElements = new Set([
+          ...permittedElements,
+          ...res.permittedElements
+        ]);
+
+        patternMembers.push(res.pattern);
+
+        cp = res.cp;
+      } else if (isNameStartChar(cp)) {
+        const nameCPs = [ cp ];
+
+        cp = yield * this.zeroOrMoreWhere(isNameContinueChar, nameCPs);
+
+        const name = String.fromCodePoint(...nameCPs);
+
+        let quantifier = '';
+
+        if (cp === ASTERISK || cp === PLUS_SIGN || cp === QUESTION_MARK) {
+          quantifier = String.fromCodePoint(cp);
+          cp = yield;
+        }
+
+        patternMembers.push(`(?: ${ name })${ quantifier }`);
+        permittedElements.add(name);
+      } else {
+        this._expected(cp, '"(" or element name')
+      }
+
+      cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
+
+      switch (cp) {
+        case COMMA:
+          if (type === 'DISJUNCTION') {
+            this._expected(cp, '")" or "|"');
+          }
+
+          type = 'SERIES';
+          break;
+
+        case PIPE:
+          if (type === 'SERIES') {
+            this._expected(cp, '")" or ","');
+          }
+
+          type = 'DISJUNCTION';
+          break;
+
+        case PARENTHESIS_RIGHT:
+          const divider = type === 'DISJUNCTION' ? '|' : '';
+
+          let quantifier = '';
+
+          cp = yield;
+
+          if (cp === ASTERISK || cp === PLUS_SIGN || cp === QUESTION_MARK) {
+            quantifier = String.fromCodePoint(cp);
+            cp = yield;
+          }
+
+          return {
+            cp,
+            pattern: `(?:${ patternMembers.join(divider) })${ quantifier }`,
+            permittedElements
+          };
+
+        default:
+          switch (type) {
+            case 'DISJUNCTION': this._expected(cp, '"|" or ")"');
+            case 'SERIES':      this._expected(cp, '"," or ")"');
+            default:            this._expected(cp, '",", "|", or ")"');
+          }
+      }
+
+      cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined);
+
+      continue;
+    }
   }
 
   // ENTITY DECLARATION ////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  // Beginning immediately after "<!EN". It does not emit a token because
-  // entity declarations are strictly information for the tokenizer and have no
-  // meaning at higher levels (the exceptional case being unparsed entities, but
-  // this is still dealt with elsewhere).
-  //
-  // >> EntityDecl  ::= GEDecl | PEDecl
-  // >> EntityDef   ::= EntityValue | (ExternalID NDataDecl?)
-  // >> EntityValue ::= '"' ([^%&"] | PEReference | Reference)* '"'
-  //                  | "'" ([^%&'] | PEReference | Reference)* "'"
-  // >> GEDecl      ::= '<!ENTITY' S Name S EntityDef S? '>'
-  // >> NDataDecl   ::= S 'NDATA' S Name
-  // >> PEDecl      ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
-  // >> PEDef       ::= EntityValue | ExternalID
+  // Beginning immediately after "<!EN". The assembled value will be passed to
+  // declareEntity().
 
   * ENTITY_DECL() {
     let cp;
@@ -2154,57 +2111,12 @@ class Tokenizer extends Decoder {
 
   // EXT_ENTITY ////////////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  //           ✨✨✨✨ TARGET STATE — UNDERSTANDS EOF ✨✨✨✨
+  //          ✨✨✨✨ TARGET STATE — UNDERSTANDS EOF ✨✨✨✨
   //
-  // The external entity production is an odd case. There are actually two
-  // possible productions, depending on whether the entity is general or
-  // parameter. For general entities, it’s this:
-  //
-  // >> extParsedEnt ::= TextDecl? content
-  //
-  // Curiously, the other production is never given with a name (this caused me
-  // a lot of confusion!). Rather it is described in the text like this:
-  //
-  // 4.3.2 [...] All external parameter entities are well-formed by definition.
-  //
-  // How mysterious. There is more information later on:
-  //
-  // 4.5 Construction of Entity Replacement Text
-  //   [...] For an external entity, the replacement text is the content of the
-  //   entity, after stripping the text declaration (leaving any surrounding
-  //   whitespace) if there is one but without any replacement of character
-  //   references or parameter-entity references.
-  //
-  // In other words, the missing production looks like this:
-  //
-  // >> ???? ::= TextDecl? Char*
-  //
-  // ...further, despite the explicit "extParsedEnt" production (which — more
-  // confusion — does not, in its name, indicate that it is very specifically
-  // describing external general entities only), the other implicit production
-  // above seems to be sufficient for describing both cases.
-  //
-  // This is because the constraint on "Char*" in the case of general entities
-  // (i.e., that it be "content", effectively a subset) is implicit in the rules
-  // for usage of general entities, and parsed external entities are not
-  // supposed to be parsed until they are referenced anyway.
-  //
-  // In fact I wonder if I’m not missing something, since it seems odd that they
-  // would include an explicit rule for external general entities and have it be
-  // redundant with replacement rules found in other places. As far as I can
-  // tell, though, there is no good reason to attempt constraining the
-  // replacement text in either case at the time of discovery. We do not even
-  // need to confirm the validity of Char*.
-  //
-  // This production will directly emit one token:
-  //
-  // - REPLACEMENT_TEXT :: 1
-  //
-  // Uniquely, this token’s value will be the raw CP array, not converted yet to
-  // string. It is not emitted externally like the tokens of an external DTD.
+  // Emits REPLACEMENT_TEXT event on termination; value is array of CPs.
 
   * EXT_ENTITY() {
     const replTextCPs = [];
@@ -2240,7 +2152,7 @@ class Tokenizer extends Decoder {
       }
 
       if (cp === EOF) {
-        this.emit('token', { type: 'REPLACEMENT_TEXT', value: replTextCPs });
+        this.emit('REPLACEMENT_TEXT', replTextCPs);
         return;
       }
 
@@ -2251,63 +2163,10 @@ class Tokenizer extends Decoder {
 
   // EXT_SUBSET ////////////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
   //           ✨✨✨✨ TARGET STATE — UNDERSTANDS EOF ✨✨✨✨
-  //
-  // EXT_SUBSET is an entry state which takes no initial codepoint and
-  // understands the EOF symbol. It captures no tokens directly. Terminology can
-  // be confusing in the spec surrounding ‘entities’. It helps to know that yes,
-  // an external subset is just a kind of external entity, but it is not
-  // accessed through dereferencing <!ENTITY; rather, it is accessed through
-  // dereferencing the external ID of a <!DOCTYPE declaration. It has a specific
-  // grammar to adhere to, whereas declared external entities are just
-  // TEXT_DECL? ANYTHING; ANYTHING is the text which will be expanded, and
-  // therefore cannot be parsed according to a specific grammar until it is
-  // actually referenced in a specific context).
-  //
-  // The differences between EXT_SUBSET and INT_SUBSET (a similar production
-  // which may occur between "[" and "]" in a DOCTYPE declaration) are:
-  //
-  // - being an external entity, it may begin with TEXT_DECL;
-  // - it is a "file", like DOCUMENT and EXT_ENTITY, so we will only know it is
-  //   complete when it gets EOF symbol;
-  // - the CONDITIONAL_SECT (<!INCLUDE, <!IGNORE) productions are valid;
-  // - most importantly, parameter references are permitted to occur in (almost)
-  //   any position *within* markup declarations
-  //
-  // That last item is the primary case that makes decoupling the concepts of
-  // lexing and parsing in XML difficult (well, I gave up on that fantasy,
-  // anyway), though it is not the only example, just the most extreme one.
-  //
-  // When we are in INT_SUBSET, a special rule kicks in during expansion of
-  // parameter references: the content of the parameter reference is parsed,
-  // effectively, as "extSubsetDecl" below, and not as INT_SUBSET. This is the
-  // only case where the unpacked content is not interpreted according to the
-  // local context, so it is important to know about: INT_SUBSET "becomes"
-  // EXT_SUBSET for the duration of the expansion.
-  //
-  // However!! This rule kicks in only for expansion of parameter references
-  // which were, themselves, root "external" entities, as opposed to those
-  // whose values were indicated with "EntityValue". This is part of why we must
-  // maintain a record of this distinction about entity origin.
-  //
-  // For more information about all this, please see section 1.1 of the XML
-  // specification, "Origin and Goals" — specifically:
-  //
-  // 4. It shall be easy to write programs which process XML documents.
-  //
-  // Nailed it, guys.
-  //
-  // >> conditionalSect    ::= includeSect | ignoreSect
-  // >> extSubset          ::= TextDecl? extSubsetDecl
-  // >> extSubsetDecl      ::= (markupdecl | conditionalSect | DeclSep)*
-  // >> Ignore             ::= Char* - (Char* ('<![' | ']]>') Char*)
-  // >> ignoreSect         ::= '<![' S? 'IGNORE' S?
-  //                           '[' ignoreSectContents* ']]>'
-  // >> ignoreSectContents ::= Ignore ('<![' ignoreSectContents ']]>' Ignore)*
-  // >> includeSect        ::= '<![' S? 'INCLUDE' S? '[' extSubsetDecl ']]>'
 
   * EXT_SUBSET() {
     let textDeclPossible = true;
@@ -2391,7 +2250,6 @@ class Tokenizer extends Decoder {
           }
 
           if (isPITarget(targetCPs)) {
-            this.token('PROCESSING_INSTRUCTION_TARGET', targetCPs);
             yield * this.PROCESSING_INSTRUCTION_VALUE();
             markupBoundary()();
             continue;
@@ -2415,8 +2273,8 @@ class Tokenizer extends Decoder {
 
   // NOTATION DECLARATION //////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
   // Beginning immediately after "<!N".
 
@@ -2426,8 +2284,8 @@ class Tokenizer extends Decoder {
 
   // PARAMETER ENTITY REFERENCE ////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP (returns expansion ticket instead)
+  // :: ✘ NO ARGS
+  // :: ✔ RETURNS EXPANSION TICKET
   //
   // Immediately after '%' — and it triggers the expansion.
 
@@ -2447,16 +2305,10 @@ class Tokenizer extends Decoder {
 
   // PROCESSING_INSTRUCTION ////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✔ RETURNS PROCESSING INSTRUCTION
   //
-  // Starting immediately after "<?", this state may be entered from ELEMENT,
-  // and DOCUMENT_doctypeDecl, where we do not need to disambiguate from text or
-  // xml declarations. Will capture one token:
-  //
-  // - PROCESSING_INSTRUCTION_TARGET :: 1
-  //
-  // >> PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+  // Starting immediately after "<?".
 
   * PROCESSING_INSTRUCTION() {
     const targetCPs = [];
@@ -2467,9 +2319,9 @@ class Tokenizer extends Decoder {
     cp = yield * this.zeroOrMoreWhere(isNameContinueChar, targetCPs);
 
     if (isPITarget(targetCPs)) {
-      this.token('PROCESSING_INSTRUCTION_TARGET', targetCPs);
-      yield * this.PROCESSING_INSTRUCTION_VALUE(cp);
-      return;
+      const target = String.fromCodePoint(...targetCPs);
+      const value = yield * this.PROCESSING_INSTRUCTION_VALUE(cp);
+      return new ProcessingInstruction(target, value);
     }
 
     this._expected(cp, 'valid processing instruction target');
@@ -2477,19 +2329,15 @@ class Tokenizer extends Decoder {
 
   // PROCESSING_INSTRUCTION_VALUE //////////////////////////////////////////////
   //
-  // :: ✔ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✔ ARGUMENT: INITIAL CP
+  // :: ✔ RETURNS: PROCESSING INSTRUCTION VALUE
   //
-  // Starting from immediately after the processing instruction target. This
-  // state may be entered from various states (because each root entity may need
-  // to disambiguate PROCESSING_INSTRUCTION from an xml/text declaration).
-  //
-  // - PROCESSING_INSTRUCTION_VALUE :: 0 or 1
+  // Starting from immediately after the processing instruction target.
 
   * PROCESSING_INSTRUCTION_VALUE(cp) {
     if (cp === QUESTION_MARK) {
       yield * this.oneIs(GREATER_THAN);
-      return;
+      return '';
     }
 
     const valueCPs = [];
@@ -2505,11 +2353,7 @@ class Tokenizer extends Decoder {
       if (cp === GREATER_THAN) {
         valueCPs.push(...questionCPs.slice(1));
 
-        if (valueCPs.length) {
-          this.token('PROCESSING_INSTRUCTION_VALUE', valueCPs);
-        }
-
-        return;
+        return String.fromCodePoint(...valueCPs);
       } else {
         yield * this.oneWhere(isProcInstValueChar, undefined, cp);
         valueCPs.push(...questionCPs, cp);
@@ -2519,16 +2363,10 @@ class Tokenizer extends Decoder {
 
   // TEXT_DECL /////////////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  // Starting from "<?xml ". Through child states, captures the following
-  // tokens:
-  //
-  // - XML_VERSION    :: 0 or 1
-  // - XML_ENCODING   :: 1
-  //
-  // >> TextDecl ::= '<?xml' VersionInfo? EncodingDecl S? '?>'
+  // Starting from "<?xml ".
 
   * TEXT_DECL() {
     let cp;
@@ -2550,20 +2388,10 @@ class Tokenizer extends Decoder {
 
   // XML_ENCODING //////////////////////////////////////////////////////////////
   //
-  // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ NO ARGS
+  // :: ✘ NO RETURN VALUE
   //
-  // Starting after the initial "e" in "encoding". Captures one token:
-  //
-  // - XML_ENCODING :: 1
-  //
-  // This is employed in both XML_DECLARATION (where it is optional) and
-  // TEXT_DECLARATION (where it is mandatory).
-  //
-  // >> EncName      ::= [A-Za-z] ([A-Za-z0-9._] | '-')*
-  // >> EncodingDecl ::= S 'encoding' Eq
-  //                     ( '"' EncName '"'
-  //                     | "'" EncName "'" )
+  // Starting after the initial "e" in "encoding". Configures decoder.
 
   * XML_ENCODING() {
     let cp;
@@ -2583,7 +2411,7 @@ class Tokenizer extends Decoder {
     cp = yield * this.oneWhere(isEncStartChar, encValueCPs);
     cp = yield * this.zeroOrMoreWhere(isEncContinueChar, encValueCPs);
 
-    this.token('XML_ENCODING', encValueCPs);
+    this.setXMLEncoding(String.fromCodePoint(...encValueCPs), 'declared');
 
     if (cp !== delimiter) {
       this._expected(cp, 'corresponding closing quotation mark');
@@ -2592,21 +2420,10 @@ class Tokenizer extends Decoder {
 
   // XML_VERSION ///////////////////////////////////////////////////////////////
   //
-  // :: ✔ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✔ ARGUMENT: INITIAL CP
+  // :: ✘ NO RETURN VALUE
   //
-  // Starting from expected "v", captures the following tokens:
-  //
-  // - XML_VERSION :: 1
-  //
-  // This is employed by both XML_DECLARATION (where it is a mandatory
-  // production) and TEXT_DECLARATION (where it is not.)
-  //
-  // >> Eq          ::= S? '=' S?
-  // >> VersionInfo ::= S 'version' Eq
-  //                    ( "'" VersionNum "'"
-  //                    | '"' VersionNum '"' )
-  // >> VersionNum  ::= '1.' [0-9]+
+  // Starting from expected "v". Has no effect.
 
   * XML_VERSION(cp) {
     cp = yield * this.seriesIs(VERSION_CPS, undefined, cp);
@@ -2615,16 +2432,13 @@ class Tokenizer extends Decoder {
     cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
 
     const delimiter = cp;
-    const versionNumCPs = [ ONE, PERIOD ];
 
     if (cp !== QUOTE_DBL && cp !== QUOTE_SNG) {
       this._expected(cp, 'quoted version value');
     }
 
-    cp = yield * this.seriesIs(versionNumCPs);
-    cp = yield * this.oneOrMoreWhere(isDecChar, versionNumCPs);
-
-    this.token('XML_VERSION', versionNumCPs);
+    cp = yield * this.seriesIs([ ONE, PERIOD ]);
+    cp = yield * this.oneOrMoreWhere(isDecChar);
 
     if (cp !== delimiter) {
       this._expected(cp, 'corresponding closing quotation mark');

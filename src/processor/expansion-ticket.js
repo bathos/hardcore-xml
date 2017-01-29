@@ -1,7 +1,7 @@
 // The ExpansionTicket class represents a single active entity expansion (both
 // general and parameter). It helps us manage these tricky shits a little more
 // safely: entity expansion is potentially recursive, but the content of each
-// must obey specific contextual constraints. The ‘ticket’ is used by tokenizer
+// must obey specific contextual constraints. The ‘ticket’ is used by processor
 // state methods to manage constraints and special behaviors the apply while an
 // expansion remains active.
 //
@@ -69,15 +69,15 @@
 
 export default
 class ExpansionTicket {
-  constructor(name, tokenizer) {
-    if (++tokenizer.expansionCount > tokenizer.maxExpansionCount) {
-      tokenizer.emit('error', new Error(
+  constructor(name, processor) {
+    if (++processor.expansionCount > processor.maxExpansionCount) {
+      processor.emit('error', new Error(
         `Hit maximum entity expansion count (${ name }).`
       ));
     }
 
-    if (tokenizer.activeExpansions.some(ticket => ticket.name === name)) {
-      tokenizer.emit('error', new Error(
+    if (processor.activeExpansions.some(ticket => ticket.name === name)) {
+      processor.emit('error', new Error(
         `Recursive entity expansion, explode! (${ name })`
       ));
     }
@@ -87,23 +87,23 @@ class ExpansionTicket {
     this.external = false; // May be set to true later.
 
     this.__length__           = 0;
-    this.__maxExpansionSize__ = tokenizer.maxExpansionSize;
-    this.__parents__          = tokenizer.activeExpansions.slice();
-    this.__tokenizer__        = tokenizer;
+    this.__maxExpansionSize__ = processor.maxExpansionSize;
+    this.__parents__          = processor.activeExpansions.slice();
+    this.__processor__        = processor;
 
-    tokenizer.activeExpansions.unshift(this);
+    processor.activeExpansions.unshift(this);
   }
 
   close() {
     this.active = false;
-    this.__tokenizer__.activeExpansions.shift();
+    this.__processor__.activeExpansions.shift();
   }
 
   increment() {
     this.length++;
 
     if (this.length > this.__maxExpansionSize__) {
-      this.__tokenizer__.emit('error', new Error(
+      this.__processor__.emit('error', new Error(
         `Exceeded maximum expansion size limit (${ this.name }).`
       ));
     }

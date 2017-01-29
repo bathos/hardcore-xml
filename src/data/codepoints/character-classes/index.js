@@ -12,7 +12,7 @@
 // elsewhere, anyway).
 //
 // Each function has a "description" property which is used when composing
-// failed expectation messages in the tokenizer.
+// failed expectation messages during processing.
 
 export { default as isAttValueCharDbl }    from './is-att-value-char-dbl';
 export { default as isAttValueCharSng }    from './is-att-value-char-sng';
