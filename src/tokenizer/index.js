@@ -13,6 +13,8 @@ import {
   isDecChar,
   isEncContinueChar,
   isEncStartChar,
+  isEntityValueCharDbl,
+  isEntityValueCharSng,
   isHexChar,
   isLChar,
   isMChar,
@@ -49,10 +51,9 @@ import {
   ATTLIST_CPS,
   CDATA_CPS,
   DOCTYPE_CPS,
-  ELEMENT_CPS,
+  EMENT_CPS,
   EMPTY_CPS,
   ENCODING_CPS,
-  ENTITY_CPS,
   FIXED_CPS,
   IDREF_CPS,
   IGNORE_CPS,
@@ -67,6 +68,7 @@ import {
   REQUIRED_CPS,
   STANDALONE_CPS,
   SYSTEM_CPS,
+  TITY_CPS,
   VERSION_CPS,
   YES_CPS
 } from '../data/codepoints';
@@ -143,7 +145,8 @@ const DEFAULT_OPTS = {
   target: 'document'
 };
 
-// Some information about the implementation:
+// Some information about the implementation, which stretches the word
+// ‘tokenizer’ pretty far:
 //
 // In a simple, non-conformant XML parser — one that does not concern itself
 // with even general entity expansion (beyond those which are predefined) — it
@@ -154,14 +157,14 @@ const DEFAULT_OPTS = {
 // This intends to be a non-simple, conformant XML-parser — one that reads and
 // understands DTDs, markup declarations, conditional sections, parameter entity
 // expansion in every weird oriface and general entity expansions that might
-// contain and more than CDATA...
+// contain markup in addition to just CDATA...
 //
 // Someone more clever than myself might see a way to have all these things
 // while still maintaining clean separation between lexing and parsing. I could
 // not. It seemed to me that entity expansion in particular made the the two
 // concepts truly inextricable.
 //
-// That said, at this level we are emitting ‘tokens’. That makes it,
+// That said, at this level we *are* emitting ‘tokens’. That makes it,
 // superficially, kinda lexy, even though inside it’s really parsing syntactic
 // as well as lexical productions.
 
@@ -330,7 +333,6 @@ class Tokenizer extends Decoder {
 
         case 'DOCTYPE_SYSTEM_ID': {
           this.doctype.systemID = token.value;
-          this.dereferenceDTD();
           return;
         }
 
@@ -438,14 +440,14 @@ class Tokenizer extends Decoder {
               `that, when dereferencing the ‘${ boundaryTicket.name }’ ` +
               `entity, it would not violate hierarchical boundaries. A ` +
               `single entity must not terminate any markup structures which ` +
-              `it did not begin.`
+              `it did not begin`
             );
           } else {
             this._expected(undefined,
-              `that, when dereferencing the ‘${ terminalTicket.name }’ ` +
+              `that, when dereferencing the ‘${ boundaryTicket.name }’ ` +
               `entity, it would not violate hierarchical boundaries. A ` +
               `single entity must terminate any markup structures that it ` +
-              `begins.`
+              `begins`
             );
           }
         }
@@ -517,6 +519,22 @@ class Tokenizer extends Decoder {
     }
   }
 
+  // Sets an entity definition and makes it available for referencing.
+
+  declareEntity(entity) {
+    if (entity.notation) {
+      // Validity constraint: Notation Declared
+      // TODO — since this constraint requires specifically that the notation
+      // was declared prior to this point, it drags notation declarations,
+      // unfortunately, into the scope of things the tokenizer needs to have
+      // knowledge of.
+    }
+
+    if (!this.entities.has(entity.name)) {
+      this.entities.set(entity.name, entity);
+    }
+  }
+
   // Called to dereference external entities. It just wraps the user-provided
   // "opts.dereference" function so that it is always a promise.
 
@@ -524,11 +542,53 @@ class Tokenizer extends Decoder {
     return Promise.resolve(this._dereference(type, data));
   }
 
-  // Called when an external reference to a DTD is parsed. Execution of the
-  // existing stream is halted while we await the resolution and parsing of the
-  // external DTD, whose events will be piped in.
+  // Called when an external reference to a DTD is parsed, but after the
+  // internal DTD is parsed if applicable. Execution of the existing stream is
+  // halted while we await the resolution and parsing of the external DTD, whose
+  // events will be piped in.
+  //
+  // The availability of entities was a point of confusion for me. The spec
+  // indicates that an internal subset must be parsed first before an external
+  // subset, which is consistent with these facts:
+  //
+  // 1. The first declaration of an entity takes precedence
+  // 2. Examples demonstrate using the internal DTD to define parameter entities
+  //    which affect the processing of the external DTD — indeed, this is what
+  //    makes them ‘parameter’ entities.
+  //
+  // But what had me confused for a while was this:
+  //
+  // 2.8 Prolog and Document Type Declaration
+  //   [...] Like the internal subset, the external subset and any external
+  //   parameter entities referenced in a DeclSep must consist of a series of
+  //   complete markup declarations of the types allowed by the non-terminal
+  //   symbol markupdecl, interspersed with white space or parameter-entity
+  //   references. However, portions of the contents of the external subset or
+  //   of these external parameter entities may conditionally be ignored by
+  //   using the conditional section construct; this is not allowed in the
+  //   internal subset but is allowed in external parameter entities referenced
+  //   in the internal subset.
+  //
+  // Note the last clause. This led me to believe that entities declared in an
+  // external subset were somehow available to the internal DTD, even though
+  // this could lead to paradoxes like entities whose replacement text
+  // successfully redefined the same entity. But on re-reading it a few times,
+  // it finally clicked that the "external parameter entities" they are
+  // describing are those which are declared in the internal subset but happen
+  // to have an external source — not entities *declared* externally, which are
+  // indeed unavailable back at home. At least, that’s my best understanding at
+  // the moment!
+  //
+  // Ultimately though it just means we need to provide a copy of our ‘entity
+  // directory’ to the external subset. I’m unclear still on whether we need to
+  // do the same for notations — I suspect we do (TODO), but I don’t think it’s
+  // necessary to share ELEMENT or ATTLIST stuff at least.
 
   dereferenceDTD() {
+    if (!this.doctype || !this.doctype.systemID) {
+      return;
+    }
+
     this.haltAndCatchFire();
 
     const { doctype } = this;
@@ -545,6 +605,8 @@ class Tokenizer extends Decoder {
           target: 'extSubset'
         }));
 
+        dtdTokenizer.entities  = new Map(this.entities);
+
         dtdTokenizer.on('token', token => {
           if (token.type === 'XML_VERSION' || token.type === 'XML_ENCODING') {
             // These are ‘local’ events to the external DTD; they will not be
@@ -552,18 +614,10 @@ class Tokenizer extends Decoder {
             return;
           }
 
-          // It is important to be able to distinguish between internal and
-          // external tokens up until all DTD processing is complete:
+          // We will sometimes need to distinguish between tokens whose source
+          // was local to the current target vs those brought in externally:
 
           token.external = true;
-
-          // Although the external DTD must be parsed before an internal DTD,
-          // because the internal DTD may reference entities declared in the
-          // external DTD, the rules state that the processor must behave as if
-          // internal rules were declared first (e.g., for ATTLIST precedence).
-          // Tagging the tokens as external helps us jump through this hoop
-          // later, by retroactively treating internal markup declarations as if
-          // they had been the ones seen first.
 
           this.emit('token', token);
         });
@@ -604,14 +658,14 @@ class Tokenizer extends Decoder {
     // asynchronously, thereby halting our secondary iteration for a tertiary
     // iteration, and so on.
 
-    const expansionPromise = this._expansionPromise__ = this
+    const expansionPromise = this.__expansionPromise__ = this
       .resolveEntityText(type, entityName)
       .then(entity => new Promise((resolve, reject) => {
         expansionTicket.external = Boolean(entity.systemID || entity.publicID);
 
         const cps = type === 'PARAMETER' && this.activeExpansions.length === 1
           ? [ SPACE, ...entity.cps, SPACE ]
-          : cps;
+          : entity.cps;
 
         const iter = cps[Symbol.iterator]();
 
@@ -716,7 +770,7 @@ class Tokenizer extends Decoder {
     const prefix =
       cp === EOF ? `Tokenizer input ended abruptly` :
       cp         ? `Tokenizer failed at 0x${ cp.toString(16) }` :
-                   `Tokenizer failed.`;
+                   `Tokenizer failed`;
 
     const context = `${ GREEN_START }${
       String.fromCodePoint(...[
@@ -734,8 +788,8 @@ class Tokenizer extends Decoder {
 
     throw new Error(
       `${ prefix }, line ${ this.line }, column ${ this.column }:\n` +
-      `       ${ ellipsis }${ contextStr }\n` +
-      `       Expected ${ msg }.`
+      `${ ellipsis }${ contextStr }\n` +
+      `Expected ${ msg }.`
     );
   }
 
@@ -1079,7 +1133,9 @@ class Tokenizer extends Decoder {
     let cp;
 
     while (true) {
-      cp = yield;
+      cp = xmlDeclPossible
+        ? yield
+        : yield * this.zeroOrMoreWhere(isWhitespaceChar);
 
       // terminus
 
@@ -1165,7 +1221,7 @@ class Tokenizer extends Decoder {
 
       if (isWhitespaceChar(cp)) {
         xmlDeclPossible = false;
-        cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+        continue;
       }
 
       this._expected(cp, 'whitespace or markup');
@@ -1217,6 +1273,7 @@ class Tokenizer extends Decoder {
       // terminus
 
       if (cp === GREATER_THAN) {
+        this.dereferenceDTD();
         return;
       }
 
@@ -1326,7 +1383,7 @@ class Tokenizer extends Decoder {
     let cp;
 
     while (true) {
-      cp = this.zeroOrMoreWhere(isWhitespaceChar);
+      cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
 
       if (cp === LESS_THAN) {
         const markupBoundary = this.boundary();
@@ -1348,7 +1405,7 @@ class Tokenizer extends Decoder {
             continue;
           }
 
-          const [ expansionTicket ] = this.activeExpansions || [ {} ];
+          const [ expansionTicket={} ] = this.activeExpansions || [];
 
           if (cp === A_UPPER) {
             yield * (expansionTicket.external
@@ -1914,10 +1971,185 @@ class Tokenizer extends Decoder {
   // :: ✘ ARGUMENT CP
   // :: ✘ RETURN CP
   //
-  // Beginning immediately after "<!EN".
+  // Beginning immediately after "<!EN". It does not emit a token because
+  // entity declarations are strictly information for the tokenizer and have no
+  // meaning at higher levels (the exceptional case being unparsed entities, but
+  // this is still dealt with elsewhere).
+  //
+  // >> EntityDecl  ::= GEDecl | PEDecl
+  // >> EntityDef   ::= EntityValue | (ExternalID NDataDecl?)
+  // >> EntityValue ::= '"' ([^%&"] | PEReference | Reference)* '"'
+  //                  | "'" ([^%&'] | PEReference | Reference)* "'"
+  // >> GEDecl      ::= '<!ENTITY' S Name S EntityDef S? '>'
+  // >> NDataDecl   ::= S 'NDATA' S Name
+  // >> PEDecl      ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
+  // >> PEDef       ::= EntityValue | ExternalID
 
   * ENTITY_DECL() {
-    // TODO
+    let cp;
+
+    const entity  = {};
+    const nameCPs = [];
+
+    cp = yield * this.seriesIs(TITY_CPS);
+    cp = yield * this.oneOrMoreWhere(isWhitespaceChar);
+
+    if (cp === PERCENT_SIGN) {
+      entity.type = 'PARAMETER';
+      cp = yield * this.oneOrMoreWhere(isWhitespaceChar);
+    } else {
+      entity.type = 'GENERAL';
+    }
+
+    cp = yield * this.oneWhere(isNameStartChar, nameCPs, cp);
+    cp = yield * this.zeroOrMoreWhere(isNameContinueChar, nameCPs);
+    cp = yield * this.oneOrMoreWhere(isWhitespaceChar, undefined, cp);
+
+    entity.name = String.fromCodePoint(...nameCPs);
+
+    if (cp === QUOTE_DBL || cp === QUOTE_SNG) {
+      const entityCPs = [];
+      const delim = cp;
+
+      const pred = cp === QUOTE_DBL
+        ? isEntityValueCharDbl
+        : isEntityValueCharSng;
+
+      let expansionTicket;
+
+      while (true) {
+        cp = yield * this.zeroOrMoreWhere(pred, entityCPs);
+
+        if (cp === delim) {
+          if (expansionTicket && expansionTicket.active) {
+            entityCPs.push(cp);
+            continue;
+          }
+
+          entity.cps = entityCPs;
+
+          cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+          cp = yield * this.oneIs(GREATER_THAN, undefined, cp);
+
+          this.declareEntity(entity);
+          return;
+        }
+
+        if (cp === AMPERSAND) {
+          cp = yield;
+
+          if (cp === HASH_SIGN) {
+            // 4.4.2 Included [...]
+            entityCPs.push(yield * this.CHARACTER_REFERENCE());
+            continue;
+          } else {
+            // 4.4.7 Bypassed
+            //   When a general entity reference appears in the EntityValue in
+            //   an entity declaration, it must be bypassed and left as is.
+
+            entityCPs.push(AMPERSAND);
+
+            cp = yield * this.oneWhere(isNameStartChar, entityCPs, cp);
+            cp = yield * this.zeroOrMoreWhere(isNameContinueChar, entityCPs);
+            cp = yield * this.oneIs(SEMICOLON, entityCPs, cp);
+
+            continue;
+          }
+        }
+
+        if (cp === PERCENT_SIGN) {
+          // 4.4.5 Included in Literal [...]
+          const newTicket = yield * this.PARAMETER_ENTITY_REFERENCE();
+          expansionTicket = expansionTicket || newTicket;
+          continue;
+
+          // Note that this case is deliberately not covered by the
+          // *chaoticNeutral() wrapper, as it occurs within a quoted literal.
+          // This is important because the rules here differ, and because the
+          // use of parameter references here is legal even if we are directly
+          // in an internal DTD.
+        }
+
+        this._expected(cp, 'terminal quote, reference, or valid entity char');
+      }
+    }
+
+    if (cp !== P_UPPER || cp !== S_UPPER) {
+      this._expected(cp, 'quoted entity value or external identifier');
+    }
+
+    if (cp === P_UPPER) {
+      cp = yield * this.seriesIs(PUBLIC_CPS, undefined, cp);
+      cp = yield * this.oneOrMoreWhere(isWhitespaceChar);
+
+      const publicIDCPs = [];
+      const delim = cp;
+
+      const pred =
+        cp === QUOTE_DBL ? isPublicIDCharDbl :
+        cp === QUOTE_SNG ? isPublicIDCharSng :
+        undefined;
+
+      if (!pred) {
+        this._expected(cp, 'quoted public ID');
+      }
+
+      cp = yield * this.zeroOrMoreWhere(pred, publicIDCPs);
+
+      if (cp !== delim) {
+        this._fail(cp, 'terminal quote or valid public ID character');
+      }
+
+      entity.publicID = String.fromCodePoint(...publicIDCPs);
+    } else {
+      cp = yield * this.seriesIs(SYSTEM_CPS, undefined, cp);
+    }
+
+    cp = yield * this.oneOrMoreWhere(isWhitespaceChar);
+
+    const systemIDCPs = [];
+    const delim = cp;
+
+    const pred =
+      cp === QUOTE_DBL ? isSystemIDCharDbl :
+      cp === QUOTE_SNG ? isSystemIDCharSng :
+      undefined;
+
+    if (!pred) {
+      this._expected(cp, 'quoted system ID');
+    }
+
+    cp = yield * this.zeroOrMoreWhere(pred, systemIDCPs);
+
+    if (cp !== delim) {
+      this._fail(cp, 'terminal quote or valid public ID character');
+    }
+
+    entity.systemID = String.fromCodePoint(...systemIDCPs);
+
+    cp = yield;
+
+    if (isWhitespaceChar(cp) && entity.type === 'GENERAL') {
+      cp = yield * this.zeroOrMoreWhere(isWhitespaceChar);
+
+      if (cp === N_UPPER) {
+        const ndataCPs = [];
+
+        cp = yield * this.seriesIs(NDATA_CPS, undefined, cp);
+        cp = yield * this.oneOrMoreWhere(isWhitespaceChar);
+        cp = yield * this.oneWhere(isNameStartChar, ndataCPs, cp);
+        cp = yield * this.zeroOrMoreWhere(isNameContinueChar, ndataCPs);
+
+        entity.notation = String.fromCodePoint(...ndataCPs);
+        entity.type = 'UNPARSED';
+      }
+    }
+
+    cp = yield * this.zeroOrMoreWhere(isWhitespaceChar, undefined, cp);
+
+    yield * this.oneIs(GREATER_THAN, undefined, cp);
+
+    this.declareEntity(entity);
   }
 
   // EXT_ENTITY ////////////////////////////////////////////////////////////////
@@ -2195,7 +2427,9 @@ class Tokenizer extends Decoder {
   // PARAMETER ENTITY REFERENCE ////////////////////////////////////////////////
   //
   // :: ✘ ARGUMENT CP
-  // :: ✘ RETURN CP
+  // :: ✘ RETURN CP (returns expansion ticket instead)
+  //
+  // Immediately after '%' — and it triggers the expansion.
 
   * PARAMETER_ENTITY_REFERENCE() {
     const referenceBoundary = this.boundary();
@@ -2208,7 +2442,7 @@ class Tokenizer extends Decoder {
     cp = yield * this.oneIs(SEMICOLON, undefined, cp);
 
     referenceBoundary()();
-    this.expandEntity('PARAMETER', entityCPs);
+    return this.expandEntity('PARAMETER', entityCPs);
   }
 
   // PROCESSING_INSTRUCTION ////////////////////////////////////////////////////
