@@ -21,10 +21,12 @@ const continuation = byte => {
   );
 };
 
-export default function * utf8 (chunk) {
+export default function * utf8(chunk) {
   const buffer = this.reserved
     ? Buffer.concat([ this.reserved, chunk ])
     : chunk;
+
+  this.reserved = undefined;
 
   const count = buffer.length;
 

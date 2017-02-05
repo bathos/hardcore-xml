@@ -1,9 +1,9 @@
 import {
   A_LOWER, A_UPPER, B_UPPER, C_LOWER, C_UPPER, D_LOWER, D_UPPER, E_LOWER,
-  E_UPPER, F_UPPER, G_LOWER, G_UPPER, HASH_SIGN, I_LOWER, I_UPPER, K_UPPER,
-  L_LOWER, L_UPPER, M_UPPER, N_LOWER, N_UPPER, O_LOWER, O_UPPER, P_UPPER,
-  Q_UPPER, R_LOWER, R_UPPER, S_LOWER, S_UPPER, T_LOWER, T_UPPER, U_UPPER,
-  V_LOWER, X_UPPER, Y_LOWER, Y_UPPER
+  E_UPPER, EXCLAMATION_POINT, F_UPPER, G_LOWER, G_UPPER, HASH_SIGN, I_LOWER,
+  I_UPPER, K_UPPER, LESS_THAN, L_LOWER, L_UPPER, M_UPPER, N_LOWER, N_UPPER,
+  O_LOWER, O_UPPER, P_UPPER, Q_UPPER, R_LOWER, R_UPPER, S_LOWER, S_UPPER,
+  T_LOWER, T_UPPER, U_UPPER, V_LOWER, X_UPPER, Y_LOWER, Y_UPPER
 } from '../characters';
 
 export const ANY_CPS = [
@@ -30,6 +30,26 @@ export const CDATA_CPS = [
   A_UPPER
 ];
 
+export const DOCTYPE_CPS = [
+  LESS_THAN,
+  EXCLAMATION_POINT,
+  D_UPPER,
+  O_UPPER,
+  C_UPPER,
+  T_UPPER,
+  Y_UPPER,
+  P_UPPER,
+  E_UPPER
+];
+
+export const EMENT_CPS = [
+  E_UPPER,
+  M_UPPER,
+  E_UPPER,
+  N_UPPER,
+  T_UPPER
+];
+
 export const EMPTY_CPS = [
   E_UPPER,
   M_UPPER,
@@ -49,26 +69,7 @@ export const ENCODING_CPS = [
   G_LOWER
 ];
 
-export const DOCTYPE_CPS = [
-  D_UPPER,
-  O_UPPER,
-  C_UPPER,
-  T_UPPER,
-  Y_UPPER,
-  P_UPPER,
-  E_UPPER
-];
-
-export const EMENT_CPS = [
-  E_UPPER,
-  M_UPPER,
-  E_UPPER,
-  N_UPPER,
-  T_UPPER
-];
-
 export const FIXED_CPS = [
-  HASH_SIGN,
   F_UPPER,
   I_UPPER,
   X_UPPER,
@@ -94,7 +95,6 @@ export const IGNORE_CPS = [
 ];
 
 export const IMPLIED_CPS = [
-  HASH_SIGN,
   I_UPPER,
   M_UPPER,
   P_UPPER,
@@ -168,7 +168,6 @@ export const PUBLIC_CPS = [
 ];
 
 export const REQUIRED_CPS = [
-  HASH_SIGN,
   R_UPPER,
   E_UPPER,
   Q_UPPER,

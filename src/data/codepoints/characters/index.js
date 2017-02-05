@@ -1,10 +1,6 @@
 // This is the full list of codepoints which must be uniquely matched in various
 // productions in XML, plus several digits which are used in the definitions of
 // predefined entities.
-//
-// EOF is represented by an object because it:
-// - must be truthy (null is not) so that we can do "cp || yield"
-// - must be NaNish (symbol is incomparable) so value checks fail correctly
 
 export const A_LOWER           = 'a'.codePointAt(0);
 export const A_UPPER           = 'A'.codePointAt(0);
@@ -22,7 +18,7 @@ export const D_UPPER           = 'D'.codePointAt(0);
 export const E_LOWER           = 'e'.codePointAt(0);
 export const E_UPPER           = 'E'.codePointAt(0);
 export const EIGHT             = '8'.codePointAt(0);
-export const EOF               = {};
+export const EOF               = -Infinity;
 export const EQUALS_SIGN       = '='.codePointAt(0);
 export const EXCLAMATION_POINT = '!'.codePointAt(0);
 export const F_UPPER           = 'F'.codePointAt(0);

@@ -2,7 +2,7 @@ import rollupNodeResolve from 'rollup-plugin-node-resolve';
 
 export default {
   entry: 'src/index.js',
-  external: [ 'stream' ],
+  external: [ 'assert', 'stream' ],
   plugins: [ rollupNodeResolve() ],
   sourceMap: true
 };

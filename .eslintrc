@@ -52,8 +52,10 @@ rules:
   max-len:
     - 2
     - 80
-  max-statements-per-line: 2
-  new-cap: 2
+  new-cap:
+    - 2
+    - capIsNewExceptionPattern: (^|\.)[^a-z]+$
+      newIsCapExceptionPattern: (^|\.)[^a-z]+$
   new-parens: 2
   no-caller: 2
   no-case-declarations: 2
@@ -149,7 +151,7 @@ rules:
     - 2
     - exceptions:
       - 'delete'
-  prefer-rest-params: 2
+  prefer-rest-params: 0 # this one is obnoxious when you need both
   prefer-spread: 2
   prefer-template: 2
   quote-props:
@@ -165,11 +167,7 @@ rules:
   rest-spread-spacing: 2
   semi-spacing: 2
   semi: 2
-  sort-keys:
-    - 2
-    - 'asc'
-    - natural: true
-      caseSensitive: false
+  sort-keys: 0 # annoying since you can’t sep. groupings with comments
   space-before-blocks: 2
   space-before-function-paren:
     - 2
