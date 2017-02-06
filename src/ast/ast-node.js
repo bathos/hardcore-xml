@@ -16,12 +16,12 @@ class ASTNode extends Array {
     const nonArrayShadow = {};
 
     const proxy = new Proxy(this, {
-      get: (target, key) => {
+      get: (target, key, receiver) => {
         if (isArrayIndex(key) && !this.constructor.isArrayNode) {
           return Reflect.get(nonArrayShadow, key);
         }
 
-        return Reflect.get(target, key);
+        return Reflect.get(target, key, receiver);
       },
       ownKeys: target => {
         const keys = Reflect.ownKeys(target);
@@ -32,23 +32,23 @@ class ASTNode extends Array {
 
         return keys;
       },
-      set: (target, key, value) => {
-        if (proxy[key] === value) {
+      set: (target, key, value, receiver) => {
+        if (receiver[key] === value) {
           return true;
         }
 
         const isIndex = isArrayIndex(key);
 
         if (!isIndex && !this.constructor.childKeys().has(key)) {
-          return Reflect.set(target, key, value);
+          return Reflect.set(target, key, value, receiver);
         }
 
         if (isIndex && !this.constructor.isArrayNode) {
           Reflect.set(nonArrayShadow, key, value);
         }
 
-        if (proxy[key] instanceof ASTNode) {
-          const formerChild = proxy[key];
+        if (receiver[key] instanceof ASTNode) {
+          const formerChild = receiver[key];
           CHILD_PARENT_MAPPING.delete(formerChild);
         }
 
@@ -56,17 +56,17 @@ class ASTNode extends Array {
           if (CHILD_PARENT_MAPPING.has(value)) {
             const { key, parent } = CHILD_PARENT_MAPPING.get(value);
 
-            if (parent !== proxy) {
+            if (parent !== receiver) {
               value.remove();
             } else {
               parent[key] = undefined;
             }
           }
 
-          CHILD_PARENT_MAPPING.set(value, { isIndex, key, parent: proxy });
+          CHILD_PARENT_MAPPING.set(value, { isIndex, key, parent: receiver });
         }
 
-        const res = Reflect.set(target, key, value);
+        const res = Reflect.set(target, key, value, receiver);
 
         while (this.includes(undefined)) {
           this.splice(this.indexOf(undefined), 1);
@@ -137,13 +137,8 @@ class ASTNode extends Array {
     return new Set();
   }
 
-  // Meta: typeName is mainly of interest when validating content constraints —
-  // where it fills in "name" for nameless nodes. Symbol.species makes it so
-  // operations like "map" return an array.
-
-  get name() {
-    return this.typeName;
-  }
+  // The typeName property provides an alternative way to introspect node type
+  // without using instanceof.
 
   get typeName() {
     throw new Error('Not implemented');
@@ -169,7 +164,7 @@ class ASTNode extends Array {
   }
 
   get parent() {
-    return CHILD_PARENT_MAPPING.get(this).parent;
+    return (CHILD_PARENT_MAPPING.get(this) || {}).parent;
   }
 
   get prevSibling() {
@@ -187,7 +182,7 @@ class ASTNode extends Array {
   }
 
   get document() {
-    return this.parent.document;
+    return this.parent && this.parent.document;
   }
 
   get root() {

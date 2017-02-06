@@ -1,5 +1,5 @@
 import Decoder            from '../decoder';
-import { EOF, LF }        from '../data/codepoints';
+import { EOF, LF, SPACE } from '../data/codepoints';
 import { Readable }       from 'stream';
 
 import {
@@ -56,11 +56,15 @@ class Processor extends Decoder {
     //
     // The two options (defaults: 10000 and 20000) exist to prevent entity
     // expansion attacks (aka Billion Laughs). They can be effectively disabled
-    // by setting them to Infinity.
+    // by setting them to Infinity. The two other unprefixed properties model
+    // the expansion state and total count seen, while __expansionPromise is for
+    // transient promises that may ‘interrupt’ recursive expansions.
 
-    this.expansionCount    = 0;
-    this.maxExpansionCount = $opts.maxExpansionCount;
-    this.maxExpansionSize  = $opts.maxExpansionSize;
+    this.activeExpansions   = [];
+    this.expansionCount     = 0;
+    this.maxExpansionCount  = $opts.maxExpansionCount;
+    this.maxExpansionSize   = $opts.maxExpansionSize;
+    this.__expansionPromise = undefined;
 
     // AST & root driver
 
@@ -122,23 +126,21 @@ class Processor extends Decoder {
 
       if (typeof res.value === 'object') {
         switch (res.value.signal) {
-          // case DEFINE_ENTITY:
-          //   this.entities.set(res.value.entity.name, res.value.entity);
-          //   iter.next();
-          //   break;
           case 'DEREFERENCE_DTD':
             this
-              .dereferenceDTD(res.value.value)
+              .dereference('extSubset', 'DOCTYPE', res.value.value)
               .then(external => iter.next(external));
 
             break;
-          // case EXPAND_ENTITY:
-          //   this.expandEntity(res.value.entity);
-          //   iter.next();
-          //   break;
-          // case SET_BOUNDARY:
-          //   iter.next(this.setBoundary());
-          //   break;
+
+          case 'EXPAND_ENTITY':
+            res = iter.next(this.expandEntity(res.value.value));
+            break;
+
+          case 'EXPANSION_BOUNDARY':
+            res = iter.next(this.boundary());
+            break;
+
           case 'SET_ENCODING':
             this.setXMLEncoding(res.value.value, 'declared');
             res = iter.next();
@@ -160,7 +162,9 @@ class Processor extends Decoder {
   }
 
   // Called by the underlying Decoder for each incoming codepoint — wraps "eat"
-  // with logic to advance our source text position and context.
+  // with logic to advance our source text position and context. Note that the
+  // eat method itself may be called outside of this during dereferencing, which
+  // does not advance the source position.
 
   codepoint(cp) {
     this.column++;
@@ -191,6 +195,8 @@ class Processor extends Decoder {
   // drivers which indicates what the valid continuations would have been.
 
   expected(cp, expectation) {
+    this.haltAndCatchFire();
+
     const prefix =
       cp === EOF ? `Hardcore processor input ended abruptly` :
       cp         ? `Hardcore processor failed at 0x${ cp.toString(16) }` :
@@ -217,62 +223,189 @@ class Processor extends Decoder {
     );
   }
 
-  // DEREFERENCING /////////////////////////////////////////////////////////////
+  // DEREFERENCING & EXPANSION /////////////////////////////////////////////////
 
-  dereference(type, entity) {
-    const data = {
-      name:            entity.name,
-      publicID:        entity.publicID,
-      systemID:        entity.systemID,
-      systemIDEncoded: entity.systemID && encodeURI(entity.systemID)
+  // Used to sanity-check the boundaries of entity expansions. This is mainly
+  // for use with general entity expansions, since parameter entity expansions
+  // have a built-in mechanism for the same effect (they pad the start and end
+  // of the replacement text with whitespace).
+  //
+  // The method returns a function which returns a function. The second tier is
+  // needed to handle cases where the initial character of a potential boundary
+  // violation is ambiguous — for example, assume we have a general entity, ass,
+  // whose replacement text is "wat<".
+  //
+  // <poop>&ass;/poop>
+  //
+  // When we hit "&", we call boundary() to get the "locking" function. When we
+  // hit "<", we call the locking function to get the "explode" function. When
+  // we hit the "/", we call the explode function, and because we "locked on" at
+  // the "<", even though we are now back in the original context, it explodes.
+  // (There’s a bit boundary stuff that would occur in that example, but that
+  // covers the main idea).
+
+  boundary() {
+    const [ initialContext ] = this.activeExpansions;
+
+    return () => {
+      const [ terminalContext ] = this.activeExpansions;
+
+      return () => {
+        if (initialContext === terminalContext) {
+          return;
+        }
+
+        if (initialContext && initialContext.active) {
+          this.expected(undefined,
+            `that, when dereferencing the ‘${ initialContext.name }’ ` +
+            `entity, it would not violate hierarchical boundaries — a ` +
+            `single entity must not terminate any markup structures which ` +
+            `it did not begin`
+          );
+        } else {
+          this.expected(undefined,
+            `that, when dereferencing the ‘${ terminalContext.name }’ ` +
+            `entity, it would not violate hierarchical boundaries — a ` +
+            `single entity must terminate any markup structures which it ` +
+            `began`
+          );
+        }
+      };
     };
-
-    return Promise.resolve(this._dereference(type, data));
   }
 
-  dereferenceDTD(doctypeData) {
+  // Wraps user’s dereference function; launches a second parser to handle the
+  // external entity and resolves with the AST (in the case of external parsed
+  // or general entities, this just means an array of codepoints, however).
+
+  dereference(target, type, entityData) {
     this.haltAndCatchFire();
 
-    const dtdPromise = this
-      .dereference('DTD', doctypeData)
+    const data = {
+      name:            entityData.name,
+      publicID:        entityData.publicID,
+      systemID:        entityData.systemID,
+      systemIDEncoded: entityData.systemID && encodeURI(entityData.systemID)
+    };
+
+    const promise = Promise
+      .resolve(this._dereference(type, data))
       .then(bufferOrStream => new Promise((resolve, reject) => {
+        const opts      = Object.assign({}, this._opts, { target });
+        const processor = new Processor(opts);
 
-        const dtdProcessor = new Processor(Object.assign({}, this._opts, {
-          target: 'extSubset'
-        }));
-
-        dtdProcessor.on('error', reject);
-        dtdProcessor.on('ast', resolve);
+        processor.on('error', reject);
+        processor.on('ast', resolve);
 
         if (bufferOrStream instanceof Buffer) {
-          dtdProcessor.end(bufferOrStream);
+          processor.end(bufferOrStream);
         } else if (bufferOrStream instanceof Readable) {
-          bufferOrStream.pipe(dtdProcessor);
+          bufferOrStream.pipe(processor)
+        } else {
+          reject(new Error(
+            `Cannot dereference ${ entityData.name } ${ type }: ` +
+            `user-supplied dereferencing function returned ` +
+            `${ bufferOrStream }; expected Buffer or Readable stream.`
+          ));
         }
       }));
 
-    dtdPromise
-      .then(() => {
-        this.unhalt();
-      })
-      .catch(err => {
-        this.emit('error', err);
-      });
+    promise
+      .then(() => this.unhalt())
+      .catch(err => this.emit('error', err));
 
-    return dtdPromise;
+    return promise;
   }
 
-  dereferenceEntity() {
-    // TODO
-  }
+  // Given an entity (an actual EntityDeclaration node in practice, but could be
+  // any object implementing at least "name", "type", and either "value" or
+  // "systemID"), halts normal flow, resolves the entity replacement text if
+  // necessary, and dereferences the entity by injecting the replacement text.
+  // Since entity expansion may be recursive (just not circular), we have to do
+  // a little dance.
+  //
+  // Note that in the case of resolving externals, this mutates the entity
+  // object (it adds the `value` property if it was absent).
 
-  // ENTITIES //////////////////////////////////////////////////////////////////
+  expandEntity(entity) {
+    this.haltAndCatchFire();
 
-  expandEntity() {
-    // TODO
-  }
+    const ancestors = this.activeExpansions.slice();
 
-  setBoundary() {
-    // TODO
+    const ticket = {
+      active: true,
+      increment: () => {
+        ticket.length++;
+
+        if (ticket.length > this.maxExpansionSize) {
+          this.expected(undefined,
+            `Entity ${ entity.name } not to expand to larger than the ` +
+            `maximum permitted size, ${ this.maxExpansionSize }`
+          );
+        }
+
+        ancestors.forEach(ticket => ticket.increment());
+      },
+      length: 0
+    };
+
+    this.activeExpansions.unshift(ticket);
+
+    const promise = this.__expansionPromise = new Promise((resolve, reject) => {
+      const { name } = entity;
+
+      this.expansionCount++;
+
+      if (this.expansionCount > this.maxExpansionCount) {
+        this.expected(undefined,
+          `not to surpass the maximum number of permitted expansions, ` +
+          `${ this.maxExpansionCount }`
+        );
+      }
+
+      if (this.activeExpansions.some(expansion => expansion.name === name)) {
+        const chain = this.activeExpansions
+          .map(expansion => expansion.name)
+          .reverse()
+          .join(' => ');
+
+        this.expected(undefined,
+          `entity ${ name } not to include a recursive reference to itself ` +
+          `(${ chain } => ${ name })`
+        );
+      }
+
+      return entity.value || this.dereference('extEntity', 'ENTITY', entity);
+    }).then(origCPs => {
+      entity.value = origCPs;
+
+      const isParameter = entity.type === 'PARAMETER';
+      const cps         = isParameter ? [ SPACE, ...cps, SPACE ] : cps;
+      const iter        = cps[Symbol.iterator]();
+
+      const expand = () => {
+        let cp;
+
+        // Note: Cannot be for loop due to satanic automatic iterator closing.
+
+        while (cp = iter.next().value) {
+          ticket.increment();
+
+          this.eat(cp);
+
+          if (this.__expansionPromise !== promise) {
+            this.__expansionPromise.then(expand);
+            return;
+          }
+        }
+
+        ticket.active = false;
+        this.activeExpansions.shift();
+      };
+
+      expand();
+    }).catch(err => this.emit('error', err));
+
+    return ticket;
   }
 }

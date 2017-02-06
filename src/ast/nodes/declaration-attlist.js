@@ -54,7 +54,7 @@ class AttlistDeclaration extends ASTNode {
 
     for (const node of this) {
       const isValidChild = node instanceof AttdefDeclaration;
-      assert(isValidChild, text.validChild('Attlist', node.constructor.name));
+      assert(isValidChild, text.validChild('Attlist', node));
     }
 
     super.validate();

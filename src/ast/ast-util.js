@@ -53,6 +53,9 @@ export const noDoubleHyphen = str =>
 export const noQMGT = str =>
   !str.includes('?>');
 
+export const noSectionTerminus = str =>
+  !str.includes(']]>');
+
 export const notXML = str =>
   !/^xml$/i.test(str);
 

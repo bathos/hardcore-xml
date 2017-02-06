@@ -28,6 +28,7 @@ behaviors shared by all nodes.
 - [Node Constructors](#node-constructors)
 - [General Nodes](#general-nodes)
   - [CDATA](#cdata)
+    - [`cdata.section`](#cdatasection)
     - [`cdata.text`](#cdatatext)
   - [Comment](#comment)
     - [`comment.content`](#commentcontent)
@@ -265,20 +266,28 @@ new NotationDeclaration({ name: 'foo', publicID: 'bar' });
 
 ### CDATA
 
-Leaf node representing chardata (text). Note that after parsing, the distinction
-between explicit _CDATA sections_ and implicit CDATA is dissolved. The text
-should not be empty.
+Leaf node representing chardata (text). After parsing, the distinction between
+explicit _CDATA sections_ and implicit CDATA is generally not important, but we
+do preserve that knowledge for the sake of consistent reserialization. The text
+may not be empty unless `section` is true (it would be a paradox, sort of).
+
+#### `cdata.section`
+
+Boolean, default false. If true, `text` must not contain the sequence "]]>".
 
 #### `cdata.text`
 
 String, any valid xml characters. Remember that, after parsing, entity
 references are replaced by their replacement text. CDATA is literal text by
 definition. If calling serialize(), ‘escaping’ any characters or character
-sequences that would be interpreted as markup is automatic.
+sequences that would be interpreted as markup is automatic if `section` is
+false.
 
 ```
 cdata.text = 'M&Ms';
 cdata.serialize(); // 'M&amp;Ms'
+cdata.section = true;
+cdata.serialize(); // '<![CDATA[M&Ms]]>'
 ```
 
 ### Comment

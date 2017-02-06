@@ -93,7 +93,7 @@ class Document extends ASTNode {
 
     for (const node of this) {
       const isValidChild = VALID_CHILDREN.some(Node => node instanceof Node);
-      assert(isValidChild, text.validChild('Document', node.constructor.name));
+      assert(isValidChild, text.validChild('Document', node));
     }
 
     super.validate();

@@ -35,32 +35,25 @@ import {
 // THREE, EIGHT, SEMICOLON, as in lt and amp above, with the remainder being the
 // same literal codepoints).
 
-export default {
-  xml: new Map([
-    [ 'amp', {
-      cps: [ AMPERSAND, HASH_SIGN, THREE, EIGHT, SEMICOLON ], // & -- &#38;
-      source: 'implicit',
-      type: 'GENERAL'
-    } ],
-    [ 'apos', {
-      cps: [ AMPERSAND, HASH_SIGN, THREE,  NINE, SEMICOLON ], // ' -- &#39;
-      source: 'implicit',
-      type: 'GENERAL'
-    } ],
-    [ 'gt', {
-      cps: [ AMPERSAND, HASH_SIGN,   SIX,   TWO, SEMICOLON ], // > -- &#62;
-      source: 'implicit',
-      type: 'GENERAL'
-    } ],
-    [ 'lt', {
-      cps: [ AMPERSAND, HASH_SIGN,   SIX,  ZERO, SEMICOLON ], // < -- &#60;
-      source: 'implicit',
-      type: 'GENERAL'
-    } ],
-    [ 'quot', {
-      cps: [ AMPERSAND, HASH_SIGN, THREE,  FOUR, SEMICOLON ], // " -- &#34;
-      source: 'implicit',
-      type: 'GENERAL'
-    } ],
-  ])
-};
+export default new Map([
+  [ 'amp', {
+    type: 'GENERAL',
+    value: [ AMPERSAND, HASH_SIGN, THREE, EIGHT, SEMICOLON ] // & -- &#38;
+  } ],
+  [ 'apos', {
+    type: 'GENERAL',
+    value: [ AMPERSAND, HASH_SIGN, THREE,  NINE, SEMICOLON ] // ' -- &#39;
+  } ],
+  [ 'gt', {
+    type: 'GENERAL',
+    value: [ AMPERSAND, HASH_SIGN,   SIX,   TWO, SEMICOLON ] // > -- &#62;
+  } ],
+  [ 'lt', {
+    type: 'GENERAL',
+    value: [ AMPERSAND, HASH_SIGN,   SIX,  ZERO, SEMICOLON ] // < -- &#60;
+  } ],
+  [ 'quot', {
+    type: 'GENERAL',
+    value: [ AMPERSAND, HASH_SIGN, THREE,  FOUR, SEMICOLON ] // " -- &#34;
+  } ],
+]);

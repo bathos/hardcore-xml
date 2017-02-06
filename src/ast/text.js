@@ -1,7 +1,15 @@
+const name = value => {
+  if (value == null) {
+    return String(value);
+  }
+
+  return value.constructor.name;
+};
+
 export default {
   attDefType:            'Attdef must have valid type, e.g. CDATA, IDREFS, ...',
   attlistNeedsElement:   'Attlist declaration requires element name.',
-  cdataHasLength:        'CDATA text length cannot be zero.',
+  cdataHasLength:        'CDATA text length cannot be zero unless section.',
   commentNoDoubleHyphen: 'Comment content cannot include "--".',
   conformsToAttDef:      'Attribute must conform to the attribute definition.',
   csDeterminism:         'ContentSpec cannot be ambiguous or need lookaheads.',
@@ -30,6 +38,7 @@ export default {
   mixedQualifier:        'Mixed content spec must have qualifier "*".',
   needsRoot:             'Document must have a root element.',
   noNotationEmpty:       'EMPTY element cannot have NOTATION type attribute.',
+  noSectionTerminus:     'CDATA where section===true cannot contain "]]>"',
   noQMGT:                'PI instruction cannot include "?>".',
   oneDoctype:            'Document may have only one doctype declaration.',
   oneRoot:               'Document may have only one root element.',
@@ -51,5 +60,5 @@ export default {
   systemQuotes: thing => `${ thing } system ID cannot contain both ' and ".`,
   validEnum:    thing => `${ thing } requires a valid, non-empty enumeration.`,
   redeclared:  (t, n) => `${ t } "${ n }" cannot be declared more than once.`,
-  validChild:  (p, c) => `${ p } cannot have ${ c } as a child.`
+  validChild:  (p, c) => `${ p } cannot have ${ name(c) } as a child.`
 };

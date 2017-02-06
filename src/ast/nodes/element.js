@@ -261,7 +261,7 @@ class Element extends ASTNode {
 
     for (const node of this) {
       const isValidChild = VALID_CHILDREN.some(Node => node instanceof Node);
-      assert(isValidChild, text.validChild('Element', node.constructor.name));
+      assert(isValidChild, text.validChild('Element', node));
     }
 
     if (this.doctype) {
@@ -290,9 +290,9 @@ class Element extends ASTNode {
   }
 }
 
-const VALID_CHILDREN = new Set([
+const VALID_CHILDREN = [
   CDATA,
   Comment,
   Element,
   ProcessingInstruction
-]);
+];

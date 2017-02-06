@@ -28,7 +28,7 @@ class Comment extends ASTNode {
   }
 
   validate() {
-    assert(isString(this.content),      text.isString('Comment content'));
+    assert(isString(this.content),       text.isString('Comment content'));
     assert(noDoubleHyphen(this.content), text.commentNoDoubleHyphen);
     assert(isXMLString(this.content),    text.invalidChar('Comment content'));
   }

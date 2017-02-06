@@ -126,7 +126,13 @@ export const series = function * (expectedCPs, index, acc) {
   return acc;
 };
 
-// SPECIFIC MINOR TOKENS ///////////////////////////////////////////////////////
+// SPECIFIC MINOR PRODUCTIONS //////////////////////////////////////////////////
+//
+// A handful of sequences that appear frequently as smaller pieces of larger
+// markup productions and do not correspond to nodes. Thrown in here for
+// convenience.
+
+// Returns whole name string. May be seeded with initial codepoint.
 
 export const accreteName = function * (initCp) {
   const cp = initCp || (yield);
@@ -139,11 +145,18 @@ export const accreteName = function * (initCp) {
   yield isNameStartChar.description;
 };
 
+// Eat-and-toss equals sign sequence, appearing in element attributes, xml and
+// text declarations.
+
 export const equals = function * () {
   yield * asterisk(isWhitespaceChar);
   yield * one(EQUALS_SIGN);
   yield * asterisk(isWhitespaceChar);
 };
+
+// External ID (PUBLIC "foo" "bar" etc) appears in many markup declarations.
+// Always expects the initial CP. If second arg is true, permits PUBLIC external
+// ID without the system literal (odd case for NOTATION declaration).
 
 export const externalID = function * (cp, permitPublicAlone) {
   let publicID;
@@ -177,7 +190,7 @@ export const externalID = function * (cp, permitPublicAlone) {
 
     const nextCP = yield;
 
-    if (cp === QUOTE_DBL || cp === QUOTE_SNG) {
+    if (nextCP === QUOTE_DBL || nextCP === QUOTE_SNG) {
       yield nextCP;
     } else if (permitPublicAlone) {
       yield nextCP;
