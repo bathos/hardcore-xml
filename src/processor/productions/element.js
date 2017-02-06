@@ -53,7 +53,7 @@ export default function * (nodes, name) {
           const nonValueCP = yield * oneOf(delim, AMPERSAND);
 
           if (nonValueCP === delim) {
-            if (!expansionTicket || !expansionTicket.active) {
+            if (expansionTicket && expansionTicket.active) {
               attValueCPs.push(nonValueCP);
             } else {
               break;
