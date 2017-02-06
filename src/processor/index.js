@@ -401,6 +401,7 @@ class Processor extends Decoder {
 
         ticket.active = false;
         this.activeExpansions.shift();
+        this.unhalt();
       };
 
       expand();
