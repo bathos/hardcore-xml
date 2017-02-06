@@ -47,6 +47,10 @@ export default function * (document, isTextDecl) {
     return;
   }
 
+  if (isTextDecl && cp !== E_LOWER) {
+    yield `"e" of "encoding"`;
+  }
+
   if (cp === E_LOWER) {
     yield * series(ENCODING_CPS, 1);
     yield * equals();

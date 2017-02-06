@@ -21,17 +21,17 @@ import { Readable } from 'stream';
 ////////////////////////////////////////////////////////////////////////////////
 
 export default (input, opts) => new Promise((resolve, reject) => {
-  const parser = new Parser(opts);
+  const processor = new Processor(opts);
 
-  parser.on('error', reject);
-  parser.on('result', resolve);
+  processor.on('error', reject);
+  processor.on('result', resolve);
 
   if (typeof input === 'string') {
-    parser.end(Buffer.from(input, opts.encoding));
+    processor.end(Buffer.from(input, opts.encoding));
   } else if (input instanceof Buffer) {
-    parser.end(input);
+    processor.end(input);
   } else if (input instanceof Readable) {
-    input.pipe(parser);
+    input.pipe(processor);
   } else {
     reject(new Error('First argument must be string, buffer, or stream.'));
   }
