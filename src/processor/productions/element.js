@@ -10,14 +10,17 @@ import {
   isAttValueCharSng,
   isNameStartChar,
   isWhitespaceChar,
+  isXMLChar,
 
   AMPERSAND, GREATER_THAN, QUOTE_DBL, QUOTE_SNG, SLASH
 
 } from '../../data/codepoints';
 
 export default function * (nodes, name) {
-  if (nodes.doctype && !nodes.doctype.getElement(name)) {
-    yield `element ${ name } to have been declared (document has DTD)`;
+  const decl = nodes.doctype && nodes.doctype.getElement(name);
+
+  if (nodes.doctype && !decl) {
+    yield `element ${ name } to have been declared`;
   }
 
   const element = new Element({ name });
@@ -34,6 +37,16 @@ export default function * (nodes, name) {
 
       if (isNameStartChar) {
         const key = yield * accreteName(cp);
+
+        const attdef = decl && decl.getAttDef(key);
+
+        if (decl && !attdef) {
+          yield `attribute ${ key } of element ${ name } to have been declared`;
+        }
+
+        if (element.hasAttribute(key)) {
+          yield `not to see attribute ${ key } repeated`;
+        }
 
         yield * equals();
 
@@ -60,14 +73,20 @@ export default function * (nodes, name) {
             }
           }
 
-          const newExpansionTicket = yield * GENERAL_REFERENCE(nodes);
+          const res = yield * GENERAL_REFERENCE(nodes);
 
-          if (!expansionTicket || !expansionTicket.active) {
-            expansionTicket = newExpansionTicket;
+          if (typeof res === 'object') {
+            if (!expansionTicket || !expansionTicket.active) {
+              expansionTicket = res;
+            }
+          } else {
+            attValueCPs.push(res);
           }
-       }
+        }
 
-       // xxxx
+        element.setAttribute(key, String.fromCodePoint(...attValueCPs));
+
+        continue;
       }
     }
 

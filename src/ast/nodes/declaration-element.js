@@ -143,7 +143,7 @@ class ElementDeclaration extends ASTNode {
     assert(doctype,          text.requireDTD('Element declaration'));
     assert(isString(name),   text.isString('Element declaration name'));
     assert(isName(name),     text.isName('Element declaration name'));
-    assert(isBoolean(mixed), text.boolean('Element declaration "mixed"'));
+    assert(isBoolean(mixed), text.isBoolean('Element declaration "mixed"'));
 
     assert(doctype.getElement(name) === this, text.redeclared('Element', name));
 

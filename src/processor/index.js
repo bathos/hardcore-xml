@@ -117,13 +117,6 @@ class Processor extends Decoder {
 
       let res = iter.next(cp);
 
-      if (typeof res.value === 'number') {
-        greedHoldover = res.value;
-        res = iter.next();
-      } else {
-        greedHoldover = undefined;
-      }
-
       if (typeof res.value === 'object') {
         switch (res.value.signal) {
           case 'DEREFERENCE_DTD':
@@ -146,6 +139,14 @@ class Processor extends Decoder {
             res = iter.next();
             break;
         }
+      }
+
+      if (typeof res.value === 'number') {
+        greedHoldover = res.value;
+        res = iter.next();
+        continue;
+      } else {
+        greedHoldover = undefined;
       }
 
       if (typeof res.value === 'string') {
@@ -349,8 +350,6 @@ class Processor extends Decoder {
       length: 0
     };
 
-    this.activeExpansions.unshift(ticket);
-
     const promise = this.__expansionPromise = new Promise((resolve, reject) => {
       const { name } = entity;
 
@@ -375,12 +374,14 @@ class Processor extends Decoder {
         );
       }
 
-      return entity.value || this.dereference('extEntity', 'ENTITY', entity);
+      this.activeExpansions.unshift(ticket);
+
+      resolve(entity.value || this.dereference('extEntity', 'ENTITY', entity));
     }).then(origCPs => {
       entity.value = origCPs;
 
       const isParameter = entity.type === 'PARAMETER';
-      const cps         = isParameter ? [ SPACE, ...cps, SPACE ] : cps;
+      const cps         = isParameter ? [ SPACE, ...origCPs, SPACE ] : origCPs;
       const iter        = cps[Symbol.iterator]();
 
       const expand = () => {
@@ -392,7 +393,6 @@ class Processor extends Decoder {
 
         while (cp = iter.next().value) {
           ticket.increment();
-
           this.eat(cp);
 
           if (this.__expansionPromise !== promise) {

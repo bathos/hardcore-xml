@@ -1,4 +1,4 @@
-import { accreteName, one, oneOf } from '../drivers';
+import { accreteName, one, oneOf, plus } from '../drivers';
 
 import standardEntities from '../../data/entities';
 
@@ -24,7 +24,7 @@ export default function * (node) {
       ? [ [    ], isHexChar, 16 ]
       : [ [ cp ], isDecChar, 10 ];
 
-    yield * plus(pred, cps);
+    yield * plus(pred, undefined, cps);
 
     const resolvedCP = Number.parseInt(String.fromCodePoint(...cps), base);
 
@@ -36,9 +36,7 @@ export default function * (node) {
 
     referenceBoundary()();
 
-    yield resolvedCP;
-
-    return;
+    return resolvedCP;
   }
 
   const entityName = yield * accreteName(cp);
@@ -47,11 +45,11 @@ export default function * (node) {
 
   referenceBoundary()();
 
-  let entity = nodes.doctype.getEntity(entityName);
+  let entity = node.doctype && node.doctype.getEntity(entityName);
 
   if (!entity) {
-    if (standardEntities.has(name)) {
-      entity = standardEntities.get(name);
+    if (standardEntities.has(entityName)) {
+      entity = standardEntities.get(entityName);
     } else {
       yield `general entity "${ entityName }" to have been defined`;
     }

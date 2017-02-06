@@ -47,9 +47,9 @@ export default {
 
   alsoSystem:   thing => `${ thing } must have systemID if it has publicID.`,
   attDefDupe:   thing => `Element cannot have more than one ${ thing } attdef.`,
-  boolean:      thing => `${ thing } must be a boolean value.`,
   declared:     thing => `${ thing } must be declared.`,
   invalidChar:  thing => `${ thing } cannot include illegal XML characters.`,
+  isBoolean:    thing => `${ thing } must be a boolean value.`,
   isName:       thing => `${ thing } must be a valid XML name.`,
   isPublicID:   thing => `${ thing } public ID must use restricted characters.`,
   isString:     thing => `${ thing } must be a string.`,
