@@ -386,6 +386,8 @@ class Processor extends Decoder {
       const expand = () => {
         let cp;
 
+        this.__expansionPromise = promise;
+
         // Note: Cannot be for loop due to satanic automatic iterator closing.
 
         while (cp = iter.next().value) {
