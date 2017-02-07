@@ -1,5 +1,5 @@
 const name = value => {
-  if (value == null) {
+  if (value === null || value === undefined) {
     return String(value);
   }
 

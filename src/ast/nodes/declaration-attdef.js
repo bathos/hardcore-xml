@@ -49,6 +49,18 @@ class AttdefDeclaration extends ASTNode {
     return this.parent && this.parent.element;
   }
 
+  get hasDefault() {
+    return !this.required && !this.fixed && this.defaultValue !== undefined;
+  }
+
+  get isList() {
+    return MUL_TYPES.has(this.type);
+  }
+
+  get isName() {
+    return NAM_TYPES.has(this.type);
+  }
+
   get isReference() {
     return REF_TYPES.has(this.type);
   }
@@ -80,51 +92,59 @@ class AttdefDeclaration extends ASTNode {
       return false;
     }
 
-    switch (this.type) {
-      case 'CDATA':
-        return true;
-
-      case 'NOTATION':
-        if (!this.doctype.getNotation(value)) {
-          return false;
-        }
-      case 'ENUMERATION':
-        return this.enumeration.has(value);
-
-      case 'ID':
-        return isName(value) && this.document.findDeepByID(value) === this;
-
-      case 'IDREF':
-        return isName(value) && Boolean(this.document.findDeepByID(value));
-
-      case 'ENTITY':
-        return (
-          isName(value) &&
-          (this.doctype.getEntity(value) || {}).type === 'UNPARSED'
-        );
-
-      case 'NMTOKEN':
-        return isNmtoken(value);
-    }
-
-    const tokens = value.split(/ /g);
-
-    if (new Set(tokens).size !== tokens.length) {
+    if (!this.matchesValueGrammatically(value)) {
       return false;
     }
 
-    switch (this.type) {
-      case 'IDREFS':
-        return tokens.every(isName) && tokens.every(name =>
-          this.document.findDeepByID(name)
-        );
-      case 'ENTITIES':
-        return tokens.every(isName) && tokens.every(name =>
-          (this.doctype.getEntity(name) || {}).type === 'UNPARSED'
-        );
-      case 'NMTOKENS':
-        return tokens.every(isNmtoken);
+    if (this.type === 'NOTATION') {
+      return Boolean(this.doctype.getNotation(value));
     }
+
+    if (this.type === 'ID') {
+      return this.document.findDeepByID(value) === this;
+    }
+
+    const values = value.split(/ /g);
+
+    if (this.type.startsWith('IDREF')) {
+      return values.every(value => this.document.findDeepByID(value));
+    }
+
+    if (this.type.startsWith('ENTIT')) {
+      return values
+        .map(value => this.doctype.getEntity(value))
+        .every(entity => entity && entity.type === 'UNPARSED');
+    }
+  }
+
+  matchesValueGrammatically(value) {
+    if (this.type === 'CDATA') {
+      return true;
+    }
+
+    const values = value.split(/ /g);
+
+    if (!values.length) {
+      return true;
+    }
+
+    if (new Set(values).size !== values.length) {
+      return false;
+    }
+
+    if (!this.isList && values.length > 1) {
+      return false;
+    }
+
+    if (this.enumeration) {
+      return values.every(value => this.enumeration.has(value));
+    }
+
+    if (this.isName) {
+      return values.every(isName);
+    }
+
+    return values.every(isNmtoken);
   }
 
   serialize() {

@@ -57,12 +57,16 @@ behaviors shared by all nodes.
     - [`attDef.element`](#attdefelement)
     - [`attDef.enumeration`](#attdefenumeration)
     - [`attDef.fixed`](#attdeffixed)
+    - [`attdef.hasDefault`](#attdefhasdefault)
+    - [`attdef.isList`](#attdefislist)
+    - [`attdef.isName`](#attdefisname)
     - [`attdef.isReference`](#attdefisreference)
     - [`attdef.isTokenized`](#attdefistokenized)
     - [`attdef.name`](#attdefname)
     - [`attDef.required`](#attdefrequired)
     - [`attDef.type`](#attdeftype)
     - [`attDef.matchValue\(value\)`](#attdefmatchvaluevalue)
+    - [`attDef.matchValueGrammatically\(value\)`](#attdefmatchvaluegrammaticallyvalue)
   - [AttlistDeclaration](#attlistdeclaration)
     - [`attlistDecl.element`](#attlistdeclelement)
     - [`attlistDecl.elementName`](#attlistdeclelementname)
@@ -478,6 +482,19 @@ value the only permitted value, and further, it demands that it is explicitly
 included. I don’t know why you would ever want this, it doesn’t make any sense.
 When true, `required` is implied (this takes precedence).
 
+#### `attdef.hasDefault`
+
+Boolean, access only. True if the attribute has a `defaultValue` which is
+*really* the default value (i.e., not a fixed value).
+
+#### `attdef.isList`
+
+Boolean, access only. True if the type is a list of space-delimited tokens.
+
+#### `attdef.isName`
+
+Boolean, access only. True if the type’s grammar is NAME or NAMES.
+
 #### `attdef.isReference`
 
 Boolean, access only. True if the type is `IDREF`, `IDREFS`, or `NOTATION`.
@@ -508,7 +525,14 @@ attributes_.
 #### `attDef.matchValue(value)`
 
 Returns boolean; used internally during `Element` validation to confirm that an
-attribute value conforms to the attribute definition.
+attribute value fully conforms to the attribute definition.
+
+#### `attDef.matchValueGrammatically(value)`
+
+Returns boolean; this is a subset of `matchValue` which confirms only that the
+grammar conforms. The distinction is useful because the complete check cannot be
+performed until the entire document has been parsed, while the grammatical check
+can be performed immediately.
 
 ### AttlistDeclaration
 

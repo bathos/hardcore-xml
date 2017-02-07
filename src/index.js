@@ -3,6 +3,7 @@ export { default as Processor } from './processor';
 export { default as nodes }     from './ast';
 
 import { Readable } from 'stream';
+import Processor from './processor';
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
@@ -20,7 +21,7 @@ import { Readable } from 'stream';
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
-export default (input, opts) => new Promise((resolve, reject) => {
+export const parse = (input, opts={}) => new Promise((resolve, reject) => {
   const processor = new Processor(opts);
 
   processor.on('error', reject);

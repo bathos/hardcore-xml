@@ -110,14 +110,19 @@ class Processor extends Decoder {
 
     iter.next();
 
+    const injectedCPs = [];
     let greedHoldover;
 
     while (true) {
-      const cp  = greedHoldover || (yield);
+      const cp  = greedHoldover || injectedCPs.unshift() || (yield);
 
       let res = iter.next(cp);
 
-      if (typeof res.value === 'object') {
+      if (res.value instanceof Array) {
+        injectedCPs.push(...res.value);
+        res = iter.next();
+        continue;
+      } else if (typeof res.value === 'object') {
         switch (res.value.signal) {
           case 'DEREFERENCE_DTD':
             this
@@ -220,7 +225,7 @@ class Processor extends Decoder {
     throw new Error(
       `${ prefix }, line ${ this.line }, column ${ this.column }:\n` +
       `${ ellipsis }${ contextStr }\n` +
-      `Expected ${ expectation }.`
+      `Expected ${ expectation.replace(/"""/, '\'"\'') }.`
     );
   }
 
@@ -301,7 +306,7 @@ class Processor extends Decoder {
         if (bufferOrStream instanceof Buffer) {
           processor.end(bufferOrStream);
         } else if (bufferOrStream instanceof Readable) {
-          bufferOrStream.pipe(processor)
+          bufferOrStream.pipe(processor);
         } else {
           reject(new Error(
             `Cannot dereference ${ entityData.name } ${ type }: ` +
@@ -350,7 +355,7 @@ class Processor extends Decoder {
       length: 0
     };
 
-    const promise = this.__expansionPromise = new Promise((resolve, reject) => {
+    const promise = this.__expansionPromise = new Promise(resolve => {
       const { name } = entity;
 
       this.expansionCount++;
