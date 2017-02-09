@@ -86,6 +86,7 @@ behaviors shared by all nodes.
     - [`doctype.getEntity\(name\)`](#doctypegetentityname)
     - [`doctype.getNotation\(name\)`](#doctypegetnotationname)
   - [ElementDeclaration](#elementdeclaration)
+    - [`elementDecl.allowsCDATA`](#elementdeclallowscdata)
     - [`elementDecl.contentPattern`](#elementdeclcontentpattern)
     - [`elementDecl.contentSpec`](#elementdeclcontentspec)
     - [`elementDecl.mixed`](#elementdeclmixed)
@@ -93,6 +94,7 @@ behaviors shared by all nodes.
     - [`elementDecl.getAttdef\(name\)`](#elementdeclgetattdefname)
     - [`elementDecl.getAttdefs\(\)`](#elementdeclgetattdefs)
     - [`elementDecl.matchesContent\(elem\)`](#elementdeclmatchescontentelem)
+    - [`elementDecl.matchesContent\(elem, name\)`](#elementdeclmatchescontentelem-name)
   - [EntityDeclaration](#entitydeclaration)
     - [`entityDecl.name`](#entitydeclname)
     - [`entityDecl.notation`](#entitydeclnotation)
@@ -659,6 +661,10 @@ Leaf node, though it may have a `ContentSpecDeclaration` as a property.
 `ElementDeclaration` is used to define an element and what kinds of content it
 may contain. Element attributes are declared outside of `ElementDeclaration`.
 
+#### `elementDecl.allowsCDATA`
+
+Boolean, access only. True if the element declaration permits CDATA child nodes.
+
 #### `elementDecl.contentPattern`
 
 RegExp, access only. This is used internally when validating whether an element
@@ -691,7 +697,13 @@ Returns a map of all `AttdefDeclaration` nodes associated with the element.
 
 #### `elementDecl.matchesContent(elem)`
 
-Returns `true` if `elem` complies with the content constraints.
+Returns `true` if the `Element` passed in complies with the content constraints.
+
+#### `elementDecl.matchesContent(elem, name)`
+
+Same, but here the test is _partial_ and confirms whether an element `name`
+could be a valid continuation of the content so far, rather than whether the sum
+of content is an entirely valid production.
 
 ### EntityDeclaration
 

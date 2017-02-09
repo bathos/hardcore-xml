@@ -61,6 +61,10 @@ class ContentSpecDeclaration extends ASTNode {
     return [];
   }
 
+  partialPattern() {
+    return new RegExp(`^${ this._pattern }`);
+  }
+
   pattern() {
     return new RegExp(`^${ this._pattern }$`);
   }

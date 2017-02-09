@@ -245,6 +245,8 @@ export default function * (nodes, name) {
     break;
   }
 
+  nodes.push(element);
+
   if (cp === GREATER_THAN) {
     yield * CONTENT(element, decl);
     yield * series([ ...name ].map(char => char.codePointAt(0)));
@@ -257,6 +259,5 @@ export default function * (nodes, name) {
     yield `content of ${ name } element to conform to declared content spec`;
   }
 
-  nodes.push(element);
   return;
 }

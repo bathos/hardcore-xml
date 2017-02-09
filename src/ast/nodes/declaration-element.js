@@ -35,6 +35,10 @@ class ElementDeclaration extends ASTNode {
     return new Set([ 'contentSpec' ]);
   }
 
+  get allowsCDATA() {
+    return this.mixed || this.contentSpec === 'ANY';
+  }
+
   get typeName() {
     return '#elemDecl';
   }
@@ -72,7 +76,7 @@ class ElementDeclaration extends ASTNode {
     );
   }
 
-  matchesContent(nodes) {
+  matchesContent(nodes, partialAddition) {
     if (this.contentSpec === 'ANY') {
       return true;
     }
@@ -106,6 +110,12 @@ class ElementDeclaration extends ASTNode {
       .filter(node => node instanceof Element)
       .map(node => ` ${ node.name }`)
       .join('');
+
+    if (partialAddition) {
+      return this.contentSpec
+        .partialPattern()
+        .test(`${ contentImage } ${ partialAddition }`);
+    }
 
     return this.contentSpec.pattern().test(contentImage);
   }
