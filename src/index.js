@@ -25,7 +25,7 @@ export const parse = (input, opts={}) => new Promise((resolve, reject) => {
   const processor = new Processor(opts);
 
   processor.on('error', reject);
-  processor.on('result', resolve);
+  processor.on('ast', resolve);
 
   if (typeof input === 'string') {
     processor.end(Buffer.from(input, opts.encoding));

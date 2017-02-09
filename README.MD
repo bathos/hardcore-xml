@@ -1,49 +1,101 @@
 # hardcore xml
 
-A validating xml parser.
+A validating xml parser / processor / builder thing.
+
+
+<!-- MarkdownTOC autolink=true bracket=round depth=4 -->
+
+- [wat](#wat)
+  - [why](#why)
+  - [how hardcore](#how-hardcore)
+  - [how awful is xml](#how-awful-is-xml)
+- [i want to use this](#i-want-to-use-this)
+  - [i have a string make it be xml](#i-have-a-string-make-it-be-xml)
+  - [i have a stream that all menafiefiewfheiniupu9](#i-have-a-stream-that-all-menafiefiewfheiniupu9)
+- [options](#options)
+  - [`opts.dereference`](#optsdereference)
+  - [`opts.encoding`](#optsencoding)
+  - [`opts.maxExpansionCount` / `opts.maxExpansionSize`](#optsmaxexpansioncount--optsmaxexpansionsize)
+- [ast nodes](#ast-nodes)
+
+<!-- /MarkdownTOC -->
 
 ## wat
 
+In the XML spec, two kinds of processors are defined: validating and
+non-validating. A validating processor can handle external references and is
+guaranteed to apply all effects of markup declarations found in the internal DTD
+or introduced via external entities — some of which may influence the actual
+output in additon to defining validity constraints.
+
 ### why
 
-I don’t have a particularly good answer. AFAIK, there is no existing validating
-XML parser available for node. I’ve spent a lot of time working with XML, and I
-enjoy projects like this ... but yeah, people don’t really use DTDs anymore. You
-probably don’t need this.
+I don’t have a particularly good answer.
+
+AFAIK, there is no existing validating XML processor available for node. In
+fact there maybe isn’t any XML processor available for node which fits the
+formal definition of even a non-validating parser. Most are forgiving of illegal
+sequences even in "strict mode".
+
+But why do you want it be strict? And who actually _uses_ DTDs?
+
+1. You don’t
+2. Nobody
+
+I’ve spent a lot of time working with XML, and I enjoy projects like this ...
+but yeah, you probably don’t need these features.
+
+That said, I think it’s a pretty good XML library! Even if you don’t need DTDs
+and aren’t worried about the sanctimony of formal XML spec compliance, the AST
+it generates has an API for manipulation, querying, reserializing, and
+transformation that may prove useful to you.
 
 ### how hardcore
 
 I’ve tried to follow the XML 1.0 specification closely. There’s a whole lot more
-in there than I think most people realize. It’s a monster — far more complex
-than parsing most programming languages, actually, if you’re going whole-hog.
-Realistically, there’s no way that I got everything right. That said, in theory
-it can do the following:
+in there than I think most people realize. It’s a monster if you’re going
+whole-hog. Realistically, it’s unlikely that I got every last detail correct. In
+theory it can do the following though:
 
-- parse xml, including dtds
-- ...also including external dtd subsets, external entities, etc
-- apply default attribute values according to the DTD
-- normalize attribute values according to the DTD
-- validate element content and attributes according to the DTD
-- expand general entities and parameter entities
-- hook up unparsed entities & notation types to the resulting AST
-- sniff encodings according to the spec-prescribed algorithm
-- normalize newline sequences according to the xml spec
-- poop out an AST that retains knowledge of the DTD, so you can make edits and
-  still call `.validate()` at any time
+- Decoding
+-- Handles a wide range of encodings out of the box
+-- Honors the encoding sniffing algorithm outlined in the spec
+-- Honors the encoding specified by an xml/text declaration
+-- Permits user-override of encoding with out-of-band info
+-- Normalizes newlines according to spec rules
+- Parsing
+-- Applies well-formedness constraints
+-- Outputs error messages with informative messages and context
+-- Applies validity constraints at the earliest possible time
+-- Normalizes attribute whitespace according to spec rules
+-- Normalizes tokenized attribute whitespace according to spec rules
+-- Provides default attribute values when defined by a markup declaration
+-- Recognizes the difference between whitespace CDATA and non-semantic
+   whitespace in elements with declared content specifications
+-- Resolves external parsed entities, including external DTD subsets
+-- Expands entities, including both parameter and general entities
+-- Places upper limits on entity expansion to avoid Billion Laughs attacks
+- AST
+-- Provides simplified DOM tree
+-- Nodes inherit from Array. Proxy lets us maintain knowledge of lineage.
+-- Nodes are entirely mutable
+-- Everything is ‘live’ — for example, alterations to an element declaration
+   node will effect subsequent behavior of instances of that element.
+-- `node.validate()` may be called at any time to confirm validity again.
+-- `node.serialize()` lets you output XML as a string again.
+-- `node.findDeep()`, `node.filterDeep()` allow querying in plain JS.
+-- `node.prevSibling`, `node.parent`, etc help you navigate the tree.
+-- `node.toJSON()` returns a POJO representation of the tree.
+-- You can also create new documents using the AST node constructors even
+   without processing a document.
 
-The AST nodes also provide methods for selecting, manipulating, transforming,
-and reserializing content. However! When reserializing a document that had an
-internal DTD, the internal DTD will not be retained, and entities will not be
-"unexpanded", etc. The AST root is Document, but the sum value of the DTD is
-reflected as the behavior of that Document, not as AST nodes in their own right.
-
-> Regarding that last bit, I think you could argue XML is a lossy format. It
-> could probably be done but (a) maintaining a mapping between source references
-> and their expansions would take this to a whole other level of complexity and
-> (b) the correct behavior might be considered ambiguous. For example, if we
-> edit a value which was included via reference expansion, have we severed the
-> reference mapping in that location, or have we altered the replacement text
-> for the referenced entity?
+There is a caveat about reserialization to XML. XML is, in a sense, a lossy
+format. Once entities have been expanded, especially in a context where
+subsequent manipulation of the AST is permitted, it’s tough to say how one would
+turn them back into references safely. When you made some edit, did it unlink
+the reference, or did it alter the definition of the entity replacement text
+itself? Likewise we do not retain knowledge of which attribute values were
+supplied as defaults and which were not.
 
 ### how awful is xml
 
@@ -54,123 +106,138 @@ oh my god it’s so awful yeah
 okay, first I should mention it is node 7+ only (maybe 6?) cause I am an
 asshole.
 
-there’s a bunch of stuff exposed but you probably want `XMLParser`. It’s a
-writable stream. The main event is 'complete', which serves up an AST.
+the module exposes several objects.
+
+- `hardcore.ast`: namespace object with AST node constructors
+- `hardcore.parse`: convenience method wrapping `Processor`
+- `hardcore.Processor`: main meats
+- `hardcore.Decoder`: base class underlying `Processor`
+
+### i have a string make it be xml
 
 ```
-import fs from 'fs';
-import { XMLProcessor } from 'hardcore';
+import hardcore from 'hardcore';
 
-const xmlProcessor = new XMLProcessor(opts);
-
-xmlProcessor.on('error', whatever);
-xmlProcessor.on('complete', ast => ...);
-
-fs.createReadStream('poop.svg').pipe(xmlProcessor);
-```
-
-The constructor expects a config object — we’ll get to that in a bit.
-
-Alternative API:
-
-```
-import fs from 'fs';
-import { parseXML } from 'hardcore';
-
-parseXML(stringOrBufferOrStream, opts)
+hardcore
+  .parse(myString, opts)
   .then(ast => ...)
   .catch(err => ...);
 ```
 
-even if you prefer the promise API, I recommend passing in a stream if it makes
-sense, since it can process the input asynchronously for real (I think some
-other xml parsers for node with apparently streaming interfaces actually just
-wait for the data to finish loading before parsing begins, which is like ... why
-are you a stream???).
+In this form, the first argument may be a string, a `Buffer`, or a `Readable`
+stream. We’ll come back to what the options are.
 
-## parsing options
+### i have a stream that all menafiefiewfheiniupu9
 
-### opts.dereference
-
-Since the main reason you would choose to use this over another lib is that you
-want to handle DTDs, and most often DTDs are external, this is the most
-important thing to configure.
-
-hardcore does not fetch http resources for you. that’s kind of out-of-band and
-it has security implications. When we encounter an external reference, we’ll
-call your `dereference` function, which should have this signature:
+If your input is a stream, you might prefer to use `Processor` directly since it
+always feels really good when you get to type `pipe`:
 
 ```
-resolveExternal(type, { publicID, systemID, systemIDEncoded });
-````
+import fs from 'fs';
+import hardcore from 'hardcore';
 
-- `type` can be 'ENTITY' or 'DTD'.
-- either one or both of `publicID` and `systemID` will be a string.
-- for 'DTD', `systemID`/`systemIDEncoded` is always defined
-- for 'DTD', `name` will also be defined
+const processor = new Processor(opts);
 
-The function should return a (node) buffer or (ideally) a stream representing
-the requested external resource, or a promise which resolves to one of those
-two.
+processor.on('ast', ast => ...);
+processor.on('error', err => ...);
 
-Somewhat confusingly, the "system" ID typically represents something generically
-public (as a regular URL) while the "public" ID seems to be a string which would
-require domain-specific knowledge to link to anything.
+fs.createReadStream('poop.svg').pipe(xmlProcessor);
+```
 
-In practice, since system ID is almost always an http url, you could just fetch
-it over the wire. But I wouldn’t recommend doing this blindly. It’s likely that
-you either:
+The incoming stream chunks must be buffers, not strings.
 
-- already have some idea of what external resources you need
-- know exactly what external resources you need
+`Processor` is a `Writable` stream. It’s also _actually_ a writable stream, by
+which I mean it processes incoming data as it becomes available. I mention this
+because I’ve seen other parsers that implement the stream interface but actually
+just accrete the sum of all data before beginning the parsing itself.
 
-In the former case, you could maybe whitelist specific DTD-hosting domains that
-seem like a safe bet, such as w3.org. You’d probably want to cache the results,
-too. In the latter case, you could simply include the DTDs in your own
-application and pull them off the local file system, which is the safest and
-most reliable option.
+I haven’t benchmarked hardcore or anything and don’t actually care to, but it’s
+admittedly probably considerably heavier than alternatives — I favor code I can
+still read later over optimization, or at least that’s what I tell myself. That
+said, you could say that the ability to process chunks asynchronously makes
+other optimizations unnecessary: you can always just adjust the incoming flow if
+you have to worry about eight megabyte xml documents or something.
 
-The `systemIDEncoded` is just a URL-encoded version of the original system ID
-string. Which one is preferable may vary depending on your resolution scheme.
+## options
 
-Omitting this option is possible depending on the document content. If no
-resolution mechanism is provided, hardcore will just skip over trying to load
-these resources. Since external resources may affect how a document is parsed,
-parsing may yield a different result than if the external resources had been
-provided, and, in certain cases, parsing will be impossible (e.g. if the
-document includes a reference to an entity which was only defined externally).
+These are the options for both `new Processor(opts)` and `parse(thing, opts)`.
 
-### opts.maxExpansionCount & opts.maxExpansionSize
+### `opts.dereference`
 
-A cool thing you can do with entity expansion is write a tiny XML file that
-[consumes gigabytes of memory](https://en.wikipedia.org/wiki/Billion_laughs)
-when parsed.
+This is optional only when you do not have any external entities. Since one of
+the main reasons you might choose to use hardcore is to handle DTDs, you
+probably will want to provision this.
 
-In order to prevent these attacks, there are default limits set on the number
-of expansions, in total, that may occur (`maxExpansionCount`) and the number of
-codepoints (not bytes) which a single top-level expansion may yield in total
-(`maxExpansionSize`).
+The value should be a function like this:
 
-These default to 10,000 and 20,000 respectively. Setting them to `Infinity`
-effectively disables this feature.
+```
+opts.dereference = (type, { name, publicID, systemID, systemIDEncoded }) => {
+  /* ... */
+  return bufferOrStreamOrPromiseThatResolvesToABufferOrStream;
+};
+```
 
-## what else
+The `type` will either be `'DTD'` or `'ENTITY'` (technically both are entities
+in XML parlance, but here we mean the kind declared with `<!ENTITY...`).
 
-### Decoder
+Depending on the specific declaration that defined the external reference,
+`publicID` may not be defined. The other members will always be defined, and
+`systemIDEncoded` is just the URI-encoded version of `systemID`, which may be
+more convenient in many cases.
 
-import { Decoder } from 'hardcore';
+In practice (and quite confusingly), `systemID` is usually a public http URL
+while `publicID` is one of those weird strings that appears in standards
+specifications a lot but nobody ever actually uses.
 
-This is a writable stream expecting buffer input. It does encoding sniffing in
-accord with what’s described in the XML spec and is set up to respond to inline
-encoding declarations. It supports utf8, utf16 le/be, utf32, etc, plus all the
-oldschool iso-8859 and cp125* encodings, ascii and Shift_JIS.
+You may wonder: why not just have hardcore fetch these resources automatically?
 
-I would use iconv-lite instead (who knows how much I borked this, decoding is
-fun but hard) except it didn’t seem like there were any non-messy ways for me to
-graft the specific behaviors prescribed by the XML spec onto an iconv stream.
-Aside from the sniffing algorithm (which is not generic — it involves,
-potentially, seeking "<" or "<?" in various encodings), it was critical for us
-to be able to synchronously change decoding methods (within certain boundaries)
-upon discovery of the encoding declaration — meaning, potentially, while a
-single buffer chunk is midway through processing — and alternatives out there
-just did not provide any hooks for us to do something like this.
+There are a few reasons. First is security, I guess. I mean it’s just kind of
+weird to have a parser making random HTTP requests behind the scenes, it’s not
+something you do.
+
+But also, in practice, you usually know in advance what external resources you
+need. Rather than fetch them over the wire (again, it would be weird to have a
+parser error caused by network traffic conditions), you likely will have made
+them locally available as part of your application. Or even if you do decide to
+fetch them online, you might want to keep a whitelist of permitted hosts or
+cache the responses. So the particular implementation is in your hands.
+
+I would expect that in the majority of cases you would just do something like
+
+```
+opts.dereference = (type, { systemID }) => {
+  const filePath = myMapOfEntities[systemID];
+  return fs.createReadStream(filePath);
+};
+```
+
+Note that a general or parameter entity is not dereferenced until the first time
+it is actually referenced, and it will only be requested for the first item.
+
+### `opts.encoding`
+
+You don’t normally need to provide this, but you can supply the input encoding
+as out-of-band information, for example when it comes to you via an HTTP header.
+Note that, if there is an xml or text declaration that declares the encoding in
+the file itself, it cannot contradict this.
+
+When this is not provided and there is no inline encoding declaration, hardcore
+will still be able to recognize UTF8, UTF16, or UTF32; and if the opening
+character is "<", also UTF16le/be and UTF32le/be.
+
+Supported encodings include those above, plus common one-byte encodings and
+SHIFT-JIS. If you need something else, you’ll have to decode it to one of these
+with iconvlite or similar before piping it in.
+
+### `opts.maxExpansionCount` / `opts.maxExpansionSize`
+
+These default to 10000 and 20000 respectively. These options exist to prevent
+entity expansion attacks. If you want to disable them, you can set them to
+`Infinity`. The first refers to the total number of entity expansions which may
+occur during the processing of a single entity; the latter refers to the total
+number of codepoints (not bytes) that may be the replacement text of a single
+entity which is referenced.
+
+## ast nodes
+
+See [AST Nodes](ast.md) for details on the individual node types.
