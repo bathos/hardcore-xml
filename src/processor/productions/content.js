@@ -70,7 +70,7 @@ export default function * (elem, elemDecl) {
         while (true) {
           yield * asterisk(isCDATASectionChar, cdataCPs);
 
-          const bracketCPs = yield * plus(BRACKET_RIGHT);
+          const bracketCPs = yield * plus(BRACKET_RIGHT, undefined, []);
 
           if (bracketCPs.length === 1) {
             cdataCPs.push(...bracketCPs);
@@ -97,6 +97,7 @@ export default function * (elem, elemDecl) {
 
         elem.push(cdata);
         cdataCPs.length = 0;
+        continue;
       }
 
       if (cp === QUESTION_MARK) {
@@ -144,7 +145,7 @@ export default function * (elem, elemDecl) {
     }
 
     if (cp === BRACKET_RIGHT) {
-      const bracketCPs = asterisk(BRACKET_RIGHT, []);
+      const bracketCPs = asterisk(BRACKET_RIGHT, [ cp ]);
       const cp = yield * oneOf(...entryCPs);
 
       if (bracketCPs.length > 1 && cp === GREATER_THAN) {
