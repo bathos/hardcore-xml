@@ -58,35 +58,35 @@ whole-hog. Realistically, it’s unlikely that I got every last detail correct. 
 theory it can do the following though:
 
 - Decoding
--- Handles a wide range of encodings out of the box
--- Honors the encoding sniffing algorithm outlined in the spec
--- Honors the encoding specified by an xml/text declaration
--- Permits user-override of encoding with out-of-band info
--- Normalizes newlines according to spec rules
+ - Handles a wide range of encodings out of the box
+ - Honors the encoding sniffing algorithm outlined in the spec
+ - Honors the encoding specified by an xml/text declaration
+ - Permits user-override of encoding with out-of-band info
+ - Normalizes newlines according to spec rules
 - Parsing
--- Applies well-formedness constraints
--- Outputs error messages with informative messages and context
--- Applies validity constraints at the earliest possible time
--- Normalizes attribute whitespace according to spec rules
--- Normalizes tokenized attribute whitespace according to spec rules
--- Provides default attribute values when defined by a markup declaration
--- Recognizes the difference between whitespace CDATA and non-semantic
+ - Applies well-formedness constraints
+ - Outputs error messages with informative messages and context
+ - Applies validity constraints at the earliest possible time
+ - Normalizes attribute whitespace according to spec rules
+ - Normalizes tokenized attribute whitespace according to spec rules
+ - Provides default attribute values when defined by a markup declaration
+ - Recognizes the difference between whitespace CDATA and non-semantic
    whitespace in elements with declared content specifications
--- Resolves external parsed entities, including external DTD subsets
+ - Resolves external parsed entities, including external DTD subsets
 -- Expands entities, including both parameter and general entities
--- Places upper limits on entity expansion to avoid Billion Laughs attacks
+ - Places upper limits on entity expansion to avoid Billion Laughs attacks
 - AST
--- Provides simplified DOM tree
--- Nodes inherit from Array. Proxy lets us maintain knowledge of lineage.
--- Nodes are entirely mutable
--- Everything is ‘live’ — for example, alterations to an element declaration
+ - Provides simplified DOM tree
+ - Nodes inherit from Array. Proxy lets us maintain knowledge of lineage.
+ - Nodes are entirely mutable
+ - Everything is ‘live’ — for example, alterations to an element declaration
    node will effect subsequent behavior of instances of that element.
--- `node.validate()` may be called at any time to confirm validity again.
--- `node.serialize()` lets you output XML as a string again.
--- `node.findDeep()`, `node.filterDeep()` allow querying in plain JS.
--- `node.prevSibling`, `node.parent`, etc help you navigate the tree.
--- `node.toJSON()` returns a POJO representation of the tree.
--- You can also create new documents using the AST node constructors even
+ - `node.validate()` may be called at any time to confirm validity again.
+ - `node.serialize()` lets you output XML as a string again.
+ - `node.findDeep()`, `node.filterDeep()` allow querying in plain JS.
+ - `node.prevSibling`, `node.parent`, etc help you navigate the tree.
+ - `node.toJSON()` returns a POJO representation of the tree.
+ - You can also create new documents using the AST node constructors even
    without processing a document.
 
 There is a caveat about reserialization to XML. XML is, in a sense, a lossy
