@@ -1,44 +1,39 @@
+export { default as Decoder }   from './decoder';
+export { default as Processor } from './processor';
+export { default as nodes }     from './ast';
 
-// ENVIRONS ////////////////////////////////////////////////////////////////////
+import { Readable } from 'stream';
+import Processor from './processor';
 
-import 'babel/polyfill';
-import sms from 'source-map-support';
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//                       H   A   R   D   C   O   R   E                        //
+//               ___            ___            ___                            //
+//              /   \_________ /   \_________ /   \_________                  //
+//             | *;           | *;           | *;           \                 //
+//         ==>  \__~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ o ==>            //
+//                 |  ______   / |  ______   / |  ______     /                //
+//                 / /      | |  / /      | |  / /       \  (                 //
+//                / /       | |_/ /       | |_/ /         \  \_               //
+//              _/_/        L___|/        L___|/           \___|              //
+//                                                                            //
+//                      X              M              L                       //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
 
-sms.install();
+export const parse = (input, opts={}) => new Promise((resolve, reject) => {
+  const processor = new Processor(opts);
 
-// IMPORTS /////////////////////////////////////////////////////////////////////
+  processor.on('error', reject);
+  processor.on('ast', resolve);
 
-import * as errors from 'errors';
-import * as nodes  from 'nodes';
-
-import renamers from 'renamers';
-
-import Parser from 'parser';
-
-// PARSE AS METHOD /////////////////////////////////////////////////////////////
-
-const parse = (str, opts, cb) => new Promise((resolve, reject) => {
-	if ((opts instanceof Function) && !cb) {
-		cb = opts;
-		opts = undefined;
-	}
-
-	const parser = new Parser(opts);
-
-	parser.once('error', err => { 
-		if (cb) cb(err);
-		reject(err);
-	});
-
-	parser.once('result', res => {
-		if (cb) cb(null, res);
-		resolve(res);
-	});
-
-	parser.write(str);
-	parser.end();
+  if (typeof input === 'string') {
+    processor.end(Buffer.from(input, opts.encoding));
+  } else if (input instanceof Buffer) {
+    processor.end(input);
+  } else if (input instanceof Readable) {
+    input.pipe(processor);
+  } else {
+    reject(new Error('First argument must be string, buffer, or stream.'));
+  }
 });
-
-// EXPORT //////////////////////////////////////////////////////////////////////
-
-export default { Parser, parse, nodes, renamers, errors };

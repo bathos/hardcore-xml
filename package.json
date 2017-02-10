@@ -1,41 +1,41 @@
 {
-  "name": "hardcore",
-  "version": "0.0.2",
-  "description": "xml/html parser, transformer, and creator",
-  "main": "lib/index.js",
-  "scripts": {
-    "build": "gobble build lib --force",
-    "prepublish": "npm test",
-    "test": "npm run-script build && node test/test.js | tap-spec"
+  "author": "Darien Maillet Valentine",
+  "bugs": {
+    "url": "https://github.com/bathos/hardcore-xml/issues"
   },
+  "description": "xml parser",
+  "devDependencies": {
+    "eslint": "3.13.1",
+    "rollup": "0.41.4",
+    "rollup-plugin-node-resolve": "2.0.0",
+    "tap": "9.0.3"
+  },
+  "engines": {
+    "node": ">=7.0.0"
+  },
+  "homepage": "https://github.com/bathos/hardcore-xml#readme",
+  "license": "MIT",
+  "main": "dist/hardcore.cjs.js",
+  "module": "src/index.js",
+  "name": "hardcore",
+  "keywords": [
+    "convert",
+    "doctype",
+    "dtd",
+    "parse",
+    "parser",
+    "strict",
+    "xml"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bathos/hardcore-xml.git"
   },
-  "keywords": [
-    "xml",
-    "html",
-    "parse",
-    "parser",
-    "stream",
-    "json",
-    "convert"
-  ],
-  "author": "Darien Maillet Valentine",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/bathos/hardcore-xml/issues"
+  "scripts": {
+    "build-cjs": "rollup -c -f cjs -o dist/hardcore.cjs.js",
+    "lint": "eslint src",
+    "prepublish": "npm run lint && npm run test",
+    "test": "npm run build-cjs && TAP_RCFILE=./.taprc tap test/**/*.js"
   },
-  "homepage": "https://github.com/bathos/hardcore-xml#readme",
-  "devDependencies": {
-    "gobble": "^0.10.2",
-    "gobble-babel": "^5.5.8",
-    "gobble-cli": "^0.4.2",
-    "tap-spec": "^4.0.2",
-    "tape": "^4.0.0"
-  },
-  "dependencies": {
-    "babel": "^5.5.8",
-    "source-map-support": "^0.3.1"
-  }
+  "version": "1.0.0"
 }

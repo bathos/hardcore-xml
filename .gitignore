@@ -1,5 +1,5 @@
-/.gobble-build
+npm-debug.log
+/coverage
+/dist
 /node_modules
-/lib
-*.log
-Thumbs.db
+/.nyc_output
