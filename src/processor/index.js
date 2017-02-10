@@ -222,7 +222,6 @@ class Processor extends Decoder {
       if (typeof res.value === 'number') {
         greedHoldover = res.value;
         res = activeIter.next();
-        continue;
       } else {
         greedHoldover = undefined;
       }

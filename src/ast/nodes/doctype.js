@@ -51,7 +51,7 @@ class DoctypeDeclaration extends ASTNode {
   }
 
   getAll() {
-    return [ this, ...this.external || [] ];
+    return [ ...this, ...this.external || [] ];
   }
 
   getElement(name) {

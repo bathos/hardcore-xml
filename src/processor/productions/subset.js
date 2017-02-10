@@ -30,7 +30,7 @@ export default function * SUBSET(nodes) {
     const cp = yield;
 
     if (cp === LESS_THAN) {
-      const markupBoundary = yield { SIGNAL: 'EXPANSION_BOUNDARY' };
+      const markupBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
 
       const cp = yield * oneOf(EXCLAMATION_POINT, QUESTION_MARK);
 
@@ -40,11 +40,9 @@ export default function * SUBSET(nodes) {
         continue;
       }
 
-      yield * one(EXCLAMATION_POINT);
-
       const possibleCPs = [ A_UPPER, E_UPPER, HYPHEN, N_UPPER ];
 
-      if (yield { SIGNAL: 'CHAOS?' }) {
+      if (yield { signal: 'CHAOS?' }) {
         possibleCPs.push(BRACKET_LEFT);
       }
 
@@ -80,6 +78,7 @@ export default function * SUBSET(nodes) {
           break;
         case A_UPPER:
           yield * ATTLIST_DECL(nodes);
+          break;
         case E_UPPER:
           switch (yield * oneOf(L_UPPER, N_UPPER)) {
             case L_UPPER:

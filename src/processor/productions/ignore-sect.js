@@ -23,7 +23,7 @@ export default function * IGNORE_SECT() {
     const lessThanCPs = yield * asterisk(LESS_THAN, []);
 
     if (lessThanCPs.length) {
-      const sectionBoundary = yield { SIGNAL: 'EXPANSION_BOUNDARY' };
+      const sectionBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
 
       const cp = yield;
 

@@ -44,6 +44,8 @@ export default function * (document) {
     cp = yield;
   }
 
+  document.push(doctype);
+
   if (cp === BRACKET_LEFT) {
     yield * SUBSET(doctype);
     yield * one(BRACKET_RIGHT);
@@ -63,8 +65,6 @@ export default function * (document) {
         }
       };
     }
-
-    document.push(doctype);
     return;
   }
 }

@@ -15,7 +15,7 @@ import {
 } from '../../data/codepoints';
 
 export default function * (nodes) {
-  yield * series(ELEMENT_CPS, 3);
+  yield * series(ELEMENT_CPS, 2);
   yield * plus(isWhitespaceChar);
 
   const name = yield * accreteName();

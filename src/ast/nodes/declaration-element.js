@@ -49,7 +49,7 @@ class ElementDeclaration extends ASTNode {
     }
 
     for (const node of this.doctype.getAll()) {
-      if (node instanceof Attlist && node.name === this.name) {
+      if (node instanceof Attlist && node.elementName === this.name) {
         const def = node.find(node =>
           node instanceof Attdef &&
           node.name === name
@@ -68,7 +68,10 @@ class ElementDeclaration extends ASTNode {
       this.doctype &&
       this.doctype
         .getAll()
-        .filter(node => node instanceof Attlist && node.elemName === this.name)
+        .filter(node =>
+          node instanceof Attlist &&
+          node.elementName === this.name
+        )
         .reduce((acc, node) => [ ...acc, ...node ], [])
         .filter(node => node instanceof Attdef)
         .filter((n1, i, arr) => arr.find(n2 => n2.name === n1.name) === n1)

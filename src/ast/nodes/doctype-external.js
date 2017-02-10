@@ -8,15 +8,6 @@ import NotationDeclaration   from './declaration-notation';
 import ProcessingInstruction from './processing-instruction';
 import text                  from '../text';
 
-const VALID_CHILDREN = [
-  AttlistDeclaration,
-  Comment,
-  ElementDeclaration,
-  EntityDeclaration,
-  NotationDeclaration,
-  ProcessingInstruction
-];
-
 export default
 class ExternalSubset extends ASTNode {
 
@@ -29,6 +20,15 @@ class ExternalSubset extends ASTNode {
   }
 
   validate() {
+    const VALID_CHILDREN = [
+      AttlistDeclaration,
+      Comment,
+      ElementDeclaration,
+      EntityDeclaration,
+      NotationDeclaration,
+      ProcessingInstruction
+    ];
+
     for (const node of this) {
       const isValidChild = VALID_CHILDREN.some(Node => node instanceof Node);
       assert(isValidChild, text.validChild('DTD', node));

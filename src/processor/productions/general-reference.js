@@ -66,6 +66,6 @@ export default function * (node, postHash) {
 
   return yield {
     signal: 'EXPAND_ENTITY',
-    value: entity
+    value: { entity }
   };
 }

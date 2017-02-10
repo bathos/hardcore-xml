@@ -71,6 +71,14 @@ export const ENCODING_CPS = [
   G_LOWER
 ];
 
+export const ENTIT_CPS = [
+  E_UPPER,
+  N_UPPER,
+  T_UPPER,
+  I_UPPER,
+  T_UPPER
+];
+
 export const ENTITY_CPS = [
   E_UPPER,
   N_UPPER,
@@ -80,11 +88,27 @@ export const ENTITY_CPS = [
   Y_UPPER
 ];
 
+export const ENTITIES_CPS = [
+  E_UPPER,
+  N_UPPER,
+  T_UPPER,
+  I_UPPER,
+  T_UPPER,
+  I_UPPER,
+  E_UPPER,
+  S_UPPER
+];
+
 export const FIXED_CPS = [
   F_UPPER,
   I_UPPER,
   X_UPPER,
   E_UPPER,
+  D_UPPER
+];
+
+export const ID_CPS = [
+  I_UPPER,
   D_UPPER
 ];
 
