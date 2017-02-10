@@ -36,6 +36,7 @@ export default {
   mixedChildrenType:     'Mixed content spec children must be type "ELEMENT"',
   mixedNeedsCSN:         'Element declaration "mixed" needs ContentSpec node.',
   mixedQualifier:        'Mixed content spec must have qualifier "*".',
+  mixedType:             'Mixed content spec must be CHOICE type.',
   needsRoot:             'Document must have a root element.',
   noNotationEmpty:       'EMPTY element cannot have NOTATION type attribute.',
   noSectionTerminus:     'CDATA where section===true cannot contain "]]>"',

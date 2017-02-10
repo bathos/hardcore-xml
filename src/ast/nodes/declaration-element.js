@@ -165,9 +165,11 @@ class ElementDeclaration extends ASTNode {
 
       if (mixed) {
         const validOwnQual = contentSpec.qualifier === '*';
+        const validType    = 'CHOICE';
         const validTypes   = contentSpec.every(node => node.type === 'ELEMENT');
         const validQuals   = contentSpec.every(node => !node.qualifier);
 
+        assert(validType,    text.mixedType);
         assert(validOwnQual, text.mixedQualifier);
         assert(validTypes,   text.mixedChildrenType);
         assert(validQuals,   text.mixedChildrenQual);

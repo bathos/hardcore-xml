@@ -17,6 +17,18 @@ class ContentSpecDeclaration extends ASTNode {
     this.type      = type;
   }
 
+  get hasAmbiguousSequence() {
+    return this
+      .slice(1, -1)
+      .filter(node => node.qualifier)
+      .some(node => {
+        const entryNames = node.entryNames();
+        const nextEntryNames = new Set(node.nextSibling.entryNames());
+
+        return entryNames.some(entryName => nextEntryNames.has(entryName));
+      });
+  }
+
   get _pattern() {
     if (this.type === 'ELEMENT') {
       return `( ${ this.name })${ this.qualifier }`;
@@ -104,17 +116,7 @@ class ContentSpecDeclaration extends ASTNode {
 
         assert(entryNames.length === uniqueEntryNames.size, text.csDeterminism);
       } else {
-        const hasAmbiguousSequence = this
-          .slice(1, -1)
-          .filter(node => node.qualifier)
-          .some(node => {
-            const entryNames = node.entryNames();
-            const nextEntryNames = new Set(node.nextSibling.entryNames());
-
-            return entryNames.some(entryName => nextEntryNames.has(entryName));
-          });
-
-        assert(hasAmbiguousSequence, text.csDeterminism);
+        assert(!this.hasAmbiguousSequence, text.csDeterminism);
       }
 
       super.validate();

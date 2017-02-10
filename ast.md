@@ -71,6 +71,7 @@ behaviors shared by all nodes.
     - [`attlistDecl.element`](#attlistdeclelement)
     - [`attlistDecl.elementName`](#attlistdeclelementname)
   - [ContentSpecDeclaration](#contentspecdeclaration)
+    - [`contentSpec.hasAmbiguousSequences`](#contentspechasambiguoussequences)
     - [`contentSpec.name`](#contentspecname)
     - [`contentSpec.qualifier`](#contentspecqualifier)
     - [`contentSpec.type`](#contentspectype)
@@ -563,6 +564,11 @@ String, the `Name` of an `ElementDeclaration`
 A `ContentSpecDeclaration` is either a property of `ElementDeclaration` (as
 `elemDecl.contentSpec`) or is the child of another `ContentSpecDeclaration`
 whose type is not "ELEMENT".
+
+#### `contentSpec.hasAmbiguousSequences`
+
+Boolean, access only. True if content spec is non-deterministic according to the
+XML spec.
 
 #### `contentSpec.name`
 
