@@ -14,7 +14,7 @@ export default function * (nodes, providedName) {
   const name = providedName || (yield * accreteName());
 
   if (!notXML(name)) {
-    yield 'processing instruction name not to be "xml" (case insensitive)';
+    yield 'processing instruction target not to be "xml" (case insensitive)';
   }
 
   const cp = yield;

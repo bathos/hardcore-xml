@@ -29,7 +29,7 @@ export default function * (nodes, name) {
 
       cp = yield * oneOf(GREATER_THAN, SLASH, isNameStartChar);
 
-      if (isNameStartChar) {
+      if (isNameStartChar(cp)) {
         const key = yield * accreteName(cp);
 
         const attdef = decl && decl.getAttDef(key);

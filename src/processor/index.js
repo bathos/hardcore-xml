@@ -92,7 +92,6 @@ class Processor extends Decoder {
     // Event handling
 
     this.on('error', err => {
-      console.log(err);
       this.haltAndCatchFire();
     });
 
@@ -227,7 +226,6 @@ class Processor extends Decoder {
       }
 
       if (typeof res.value === 'string') {
-        console.log(node);
         this.expected(cp, res.value);
         return;
       }
@@ -278,8 +276,6 @@ class Processor extends Decoder {
   // drivers which indicates what the valid continuations would have been.
 
   expected(cp, expectation) {
-    this.haltAndCatchFire();
-
     const prefix =
       cp === EOF ? `Hardcore processor input ended abruptly` :
       cp         ? `Hardcore processor failed at 0x${ cp.toString(16) }` :
@@ -299,11 +295,11 @@ class Processor extends Decoder {
 
     const ellipsis = this.textContext.includes(0) ? '' : '[...]';
 
-    throw new Error(
+    this.emit('error', new Error(
       `${ prefix }, line ${ this.line }, column ${ this.column }:\n` +
       `${ ellipsis }${ contextStr }\n` +
       `Expected ${ expectation.replace(/"""/, '\'"\'') }.`
-    );
+    ));
   }
 
   // DEREFERENCING & EXPANSION /////////////////////////////////////////////////
