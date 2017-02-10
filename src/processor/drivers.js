@@ -7,7 +7,7 @@ import {
   isSystemIDCharSng,
   isWhitespaceChar,
 
-  EQUALS_SIGN, P_UPPER, QUOTE_DBL, QUOTE_SNG,
+  EQUALS_SIGN, P_UPPER, QUOTE_DBL, QUOTE_SNG, S_UPPER,
 
   PUBLIC_CPS, SYSTEM_CPS
 } from '../data/codepoints';
@@ -158,8 +158,10 @@ export const equals = function * () {
 // Always expects the initial CP. If second arg is true, permits PUBLIC external
 // ID without the system literal (odd case for NOTATION declaration).
 
-export const externalID = function * (cp, permitPublicAlone) {
+export const externalID = function * (initCP, permitPublicAlone) {
   let publicID;
+
+  const cp = initCP || (yield * oneOf(P_UPPER, S_UPPER));
 
   if (cp === P_UPPER) {
     const publicCPs = [];

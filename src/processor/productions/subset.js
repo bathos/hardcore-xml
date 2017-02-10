@@ -105,7 +105,7 @@ export default function * SUBSET(nodes) {
       continue;
     }
 
-    if (includeDepth) {
+    if (includeBoundaries.length) {
       yield `terminal "]]>" of included section`;
     }
 

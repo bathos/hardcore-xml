@@ -44,8 +44,8 @@ export default function * IGNORE_SECT() {
       continue;
     }
 
-    if (!isXMLChar(cp)) {
+    if (!isXMLChar(yield)) {
       yield `valid xml content character within IGNORE section`;
     }
   }
-};
+}

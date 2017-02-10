@@ -2,7 +2,8 @@ import Decoder            from '../decoder';
 import { Readable }       from 'stream';
 
 import {
-  EOF, LF, PARENTHESIS_LEFT, PARENTHESIS_RIGHT, QUOTE_DBL, QUOTE_SNG, SPACE
+  EOF, LF, PARENTHESIS_LEFT, PERCENT_SIGN, PARENTHESIS_RIGHT, QUOTE_DBL,
+  QUOTE_SNG, SPACE
 } from '../data/codepoints';
 
 import {
