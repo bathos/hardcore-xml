@@ -68,7 +68,9 @@ class Decoder extends Writable {
         // the default assumption in the absence of encoding declaration, BOM,
         // and the xml/text declaration based initial heuristic.
 
-        this.setXMLEncoding('UTF8');
+        if (!this._decode) {
+          this.setXMLEncoding('UTF8');
+        }
 
         try {
           for (const cp of this.decode(Buffer.from(this.firstBytes))) {

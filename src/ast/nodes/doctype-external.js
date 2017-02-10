@@ -34,7 +34,7 @@ class ExternalSubset extends ASTNode {
       assert(isValidChild, text.validChild('DTD', node));
     }
 
-    // TODO: Assertions that confirm standalone="yes" isn’t being violated.
+    // Assertions regarding standalone="yes" are only made during parsing.
 
     super.validate();
   }

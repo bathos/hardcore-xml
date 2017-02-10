@@ -1,9 +1,12 @@
 import Decoder            from '../decoder';
-import { EOF, LF, SPACE } from '../data/codepoints';
 import { Readable }       from 'stream';
 
 import {
-  DOCUMENT, EXT_PARSED_ENT, EXT_SUBSET
+  EOF, LF, PARENTHESIS_LEFT, PARENTHESIS_RIGHT, QUOTE_DBL, QUOTE_SNG, SPACE
+} from '../data/codepoints';
+
+import {
+  DOCUMENT, EXT_PARSED_ENT, EXT_SUBSET, PARAMETER_REFERENCE
 } from './productions';
 
 const CONTEXT_LEN = 30;
@@ -19,7 +22,7 @@ const DEFAULT_OPTS = {
 
 export default
 class Processor extends Decoder {
-  constructor(opts={}) {
+  constructor(opts={}, document) {
     super(opts);
 
     const $opts = this._opts = Object.assign({}, DEFAULT_OPTS, opts);
@@ -78,7 +81,7 @@ class Processor extends Decoder {
       throw new Error(`Target ${ $opts.target } is not recognized.`);
     }
 
-    const driver = this.GRAMMAR_DRIVER(rootProduction);
+    const driver = this.GRAMMAR_DRIVER(rootProduction, document);
 
     driver.next();
 
@@ -104,51 +107,98 @@ class Processor extends Decoder {
   // specific production drivers that trigger behaviors back at home (e.g. a
   // signal can trigger the expansion of an entity).
 
-  * GRAMMAR_DRIVER(rootProduction) {
-    const iter = rootProduction();
+  * GRAMMAR_DRIVER(rootProduction, document) {
+    const iter = rootProduction(document);
     const node = iter.next().value;
 
     iter.next();
 
+    const chaosBoundaries = [];
+
+    let chaosMode = 0;
+    let chaosDelim;
+    let chaosIter;
+
     const injectedCPs = [];
+
     let greedHoldover;
 
     while (true) {
-      const cp  = greedHoldover || injectedCPs.unshift() || (yield);
+      const cp = greedHoldover || injectedCPs.unshift() || (yield);
 
-      let res = iter.next(cp);
+      if (chaosMode) {
+        if (cp === PERCENT_SIGN && !chaosDelim) {
+          chaosIter = PARAMETER_REFERENCE();
+          chaosIter.next();
+          continue;
+        }
+
+        if (cp === chaosDelim) {
+          chaosDelim = undefined;
+        } else if (cp === QUOTE_DBL || cp === QUOTE_SNG) {
+          chaosDelim = cp;
+        }
+
+        if (!chaosDelim) {
+          if (cp === PARENTHESIS_LEFT) {
+            chaosBoundaries.push(this.boundary());
+          }
+
+          if (cp === PARENTHESIS_RIGHT && chaosBoundaries.length) {
+            chaosBoundaries.pop()()(); // haha yes
+          }
+        }
+      }
+
+      const activeIter = chaosIter || iter;
+
+      let res = activeIter.next(cp);
 
       if (res.value instanceof Array) {
         injectedCPs.push(...res.value);
-        res = iter.next();
+        res = activeIter.next();
         continue;
       } else if (typeof res.value === 'object') {
         switch (res.value.signal) {
+          case 'CHAOS?':
+            res = activeIter.next(Boolean(chaosMode));
+            break;
+
+          case 'CHAOS_MODE_END':
+            chaosMode--;
+            res = activeIter.next();
+            break;
+
+          case 'CHAOS_MODE_START':
+            chaosMode++;
+            res = activeIter.next();
+            break;
+
           case 'DEREFERENCE_DTD':
-            this
-              .dereference('extSubset', 'DOCTYPE', res.value.value)
-              .then(external => iter.next(external));
+            this.dereference('extSubset', 'DOCTYPE', res.value.value, node);
+
+            res = activeIter.next();
 
             break;
 
           case 'EXPAND_ENTITY':
-            res = iter.next(this.expandEntity(res.value.value));
+            res = activeIter.next(this.expandEntity(res.value.value));
             break;
 
           case 'EXPANSION_BOUNDARY':
-            res = iter.next(this.boundary());
+            res = activeIter.next(this.boundary());
             break;
 
           case 'SET_ENCODING':
             this.setXMLEncoding(res.value.value, 'declared');
-            res = iter.next();
+            res = activeIter.next();
             break;
         }
       }
 
       if (typeof res.value === 'number') {
         greedHoldover = res.value;
-        res = iter.next();
+        res = activeIter.next();
         continue;
       } else {
         greedHoldover = undefined;
@@ -161,6 +211,11 @@ class Processor extends Decoder {
       }
 
       if (res.done) {
+        if (chaosIter) {
+          chaosIter = undefined;
+          continue;
+        }
+
         this.emit('ast', node);
         break;
       }
@@ -284,7 +339,7 @@ class Processor extends Decoder {
   // external entity and resolves with the AST (in the case of external parsed
   // or general entities, this just means an array of codepoints, however).
 
-  dereference(target, type, entityData) {
+  dereference(target, type, entityData, document) {
     this.haltAndCatchFire();
 
     const data = {
@@ -298,7 +353,7 @@ class Processor extends Decoder {
       .resolve(this._dereference(type, data))
       .then(bufferOrStream => new Promise((resolve, reject) => {
         const opts      = Object.assign({}, this._opts, { target });
-        const processor = new Processor(opts);
+        const processor = new Processor(opts, document);
 
         processor.on('error', reject);
         processor.on('ast', resolve);

@@ -1,6 +1,6 @@
 import Doctype from '../../ast/nodes/doctype';
 
-import INTERNAL_SUBSET from './int-subset';
+import SUBSET from './subset';
 
 import {
   accreteName,
@@ -45,7 +45,7 @@ export default function * (document) {
   }
 
   if (cp === BRACKET_LEFT) {
-    yield * INTERNAL_SUBSET(doctype);
+    yield * SUBSET(doctype);
     yield * one(BRACKET_RIGHT);
     yield * asterisk(isWhitespaceChar);
     cp = yield;
@@ -53,7 +53,7 @@ export default function * (document) {
 
   if (cp === GREATER_THAN) {
     if (doctype.systemID) {
-      doctype.external = yield {
+      yield {
         signal: 'DEREFERENCE_DTD',
         value: {
           name:            doctype.name,

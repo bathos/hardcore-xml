@@ -1,3 +1,1 @@
-// TODO
-
 export default function * () {}
