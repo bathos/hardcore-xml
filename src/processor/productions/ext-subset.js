@@ -13,11 +13,8 @@ export default function * (document) {
 
   document.doctype.external = extSubset;
 
-  yield { SIGNAL: 'CHAOS_MODE_START' };
+  yield { SIGNAL: 'CHAOS_PLEASE' };
 
   yield * SUBSET(extSubset);
-
-  yield { SIGNAL: 'CHAOS_MODE_END' };
-
   yield * one(EOF);
 }

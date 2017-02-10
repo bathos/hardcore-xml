@@ -9,15 +9,18 @@ import {
   isXMLChar,
 
   HASH_SIGN, SEMICOLON, X_LOWER
-
 } from '../../data/codepoints';
 
-export default function * (node) {
-  const referenceBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
+export default function * (node, postHash) {
+  let referenceBoundary;
+  let cp;
 
-  const cp = yield * oneOf(HASH_SIGN, isNameStartChar);
+  if (!postHash) {
+    referenceBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
+    cp = yield * oneOf(HASH_SIGN, isNameStartChar);
+  }
 
-  if (cp === HASH_SIGN) {
+  if (postHash || cp === HASH_SIGN) {
     const cp = yield * oneOf(X_LOWER, isDecChar);
 
     const [ cps, pred, base ] = cp === X_LOWER
@@ -34,7 +37,9 @@ export default function * (node) {
 
     yield * one(SEMICOLON);
 
-    referenceBoundary()();
+    if (referenceBoundary) {
+      referenceBoundary()();
+    }
 
     return resolvedCP;
   }

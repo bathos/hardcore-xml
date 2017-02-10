@@ -2,13 +2,14 @@ import {
   asterisk, one, oneOf, series
 } from '../drivers';
 
-import ATTLIST_DECL  from './attlist-decl';
-import COMMENT       from './comment';
-import ELEMENT_DECL  from './element-decl';
-import ENTITY_DECL   from './entity-decl';
-import IGNORE_SECT   from './ignore-sect';
-import NOTATION_DECL from './notation-decl';
-import PROC_INST     from './proc-inst';
+import ATTLIST_DECL        from './attlist-decl';
+import COMMENT             from './comment';
+import ELEMENT_DECL        from './element-decl';
+import ENTITY_DECL         from './entity-decl';
+import IGNORE_SECT         from './ignore-sect';
+import NOTATION_DECL       from './notation-decl';
+import PARAMETER_REFERENCE from './parameter-reference';
+import PROC_INST           from './proc-inst';
 
 import {
   isWhitespaceChar,
@@ -99,9 +100,7 @@ export default function * SUBSET(nodes) {
     }
 
     if (cp === PERCENT_SIGN) {
-      // TODO
-      // This is a declsep ref, may occur even outside chaos mode, and may
-      // introduce chaos mode
+      yield * PARAMETER_REFERENCE(nodes, false);
       continue;
     }
 

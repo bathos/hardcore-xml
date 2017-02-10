@@ -2,6 +2,7 @@ import Decoder            from '../decoder';
 import { Readable }       from 'stream';
 
 import {
+  isWhitespaceChar,
   EOF, LF, PARENTHESIS_LEFT, PERCENT_SIGN, PARENTHESIS_RIGHT, QUOTE_DBL,
   QUOTE_SNG, SPACE
 } from '../data/codepoints';
@@ -125,13 +126,26 @@ class Processor extends Decoder {
     let greedHoldover;
 
     while (true) {
-      const cp = greedHoldover || injectedCPs.unshift() || (yield);
+      let cp = greedHoldover || injectedCPs.shift() || (yield);
 
       if (chaosMode) {
         if (cp === PERCENT_SIGN && !chaosDelim) {
-          chaosIter = PARAMETER_REFERENCE();
-          chaosIter.next();
-          continue;
+          const possibleChaosIter = PARAMETER_REFERENCE(node, false);
+
+          possibleChaosIter.next();
+
+          const innerCP = yield;
+
+          // Special case: '%' may appear as part of one non-literal value: the
+          // symbol in parameter entity declarations themselves. Therefore we
+          // need to use the following CP to disambiguate.
+
+          if (!isWhitespaceChar(innerCP)) {
+            chaosIter = possibleChaosIter;
+            cp = innerCP;
+          } else {
+            injectedCPs.unshift(innerCP);
+          }
         }
 
         if (cp === chaosDelim) {
@@ -165,12 +179,7 @@ class Processor extends Decoder {
             res = activeIter.next(Boolean(chaosMode));
             break;
 
-          case 'CHAOS_MODE_END':
-            chaosMode--;
-            res = activeIter.next();
-            break;
-
-          case 'CHAOS_MODE_START':
+          case 'CHAOS_PLEASE':
             chaosMode++;
             res = activeIter.next();
             break;
@@ -183,7 +192,20 @@ class Processor extends Decoder {
             break;
 
           case 'EXPAND_ENTITY':
-            res = activeIter.next(this.expandEntity(res.value.value));
+            {
+              const { entity, pad } = res.value.value;
+
+              const cb = entity.hasExternalOrigin
+                ? () => chaosMode--
+                : () => undefined;
+
+              if (entity.hasExternalOrigin) {
+                chaosMode++;
+              }
+
+              res = activeIter.next(this.expandEntity({ entity, pad }, cb));
+            }
+
             break;
 
           case 'EXPANSION_BOUNDARY':
@@ -389,7 +411,7 @@ class Processor extends Decoder {
   // Note that in the case of resolving externals, this mutates the entity
   // object (it adds the `value` property if it was absent).
 
-  expandEntity(entity) {
+  expandEntity({ entity, pad }, cb) {
     this.haltAndCatchFire();
 
     const ancestors = this.activeExpansions.slice();
@@ -441,9 +463,8 @@ class Processor extends Decoder {
     }).then(origCPs => {
       entity.value = origCPs;
 
-      const isParameter = entity.type === 'PARAMETER';
-      const cps         = isParameter ? [ SPACE, ...origCPs, SPACE ] : origCPs;
-      const iter        = cps[Symbol.iterator]();
+      const cps  = pad ? [ SPACE, ...origCPs, SPACE ] : origCPs;
+      const iter = cps[Symbol.iterator]();
 
       const expand = () => {
         let cp;
@@ -465,6 +486,7 @@ class Processor extends Decoder {
         ticket.active = false;
         this.activeExpansions.shift();
         this.unhalt();
+        cb();
       };
 
       expand();

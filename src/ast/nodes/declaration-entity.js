@@ -1,6 +1,7 @@
-import assert  from 'assert';
-import ASTNode from '../ast-node';
-import text    from '../text';
+import assert         from 'assert';
+import ASTNode        from '../ast-node';
+import ExternalSubset from './doctype-external';
+import text           from '../text';
 
 import {
   isCodepoints,
@@ -19,16 +20,20 @@ class EntityDeclaration extends ASTNode {
   constructor({ name, notationName, publicID, systemID, type, value }={}) {
     super();
 
-    this.name         = name;         // String (name)
-    this.notationName = notationName; // String (name)
-    this.publicID     = publicID;     // String (publicidchar+)
-    this.systemID     = systemID;     // String (char+ but not _both_ ' and ")
-    this.type         = type;         // String (TYPES above)
-    this.value        = value;        // Codepoint array
+    this.name         = name;
+    this.notationName = notationName;
+    this.publicID     = publicID;
+    this.systemID     = systemID;
+    this.type         = type;
+    this.value        = value;
   }
 
   static get isArrayNode() {
     return false;
+  }
+
+  get hasExternalOrigin() {
+    return Boolean(this.systemID || this.parent instanceof ExternalSubset);
   }
 
   get notation() {

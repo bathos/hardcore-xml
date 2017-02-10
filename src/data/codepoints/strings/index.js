@@ -42,7 +42,9 @@ export const DOCTYPE_CPS = [
   E_UPPER
 ];
 
-export const EMENT_CPS = [
+export const ELEMENT_CPS = [
+  E_UPPER,
+  L_UPPER,
   E_UPPER,
   M_UPPER,
   E_UPPER,
@@ -67,6 +69,15 @@ export const ENCODING_CPS = [
   I_LOWER,
   N_LOWER,
   G_LOWER
+];
+
+export const ENTITY_CPS = [
+  E_UPPER,
+  N_UPPER,
+  T_UPPER,
+  I_UPPER,
+  T_UPPER,
+  Y_UPPER
 ];
 
 export const FIXED_CPS = [
@@ -198,13 +209,6 @@ export const SYSTEM_CPS = [
   T_UPPER,
   E_UPPER,
   M_UPPER
-];
-
-export const TITY_CPS = [
-  T_UPPER,
-  I_UPPER,
-  T_UPPER,
-  Y_UPPER
 ];
 
 export const VERSION_CPS = [
