@@ -6,7 +6,7 @@ import { accreteName, asterisk, one, oneOf, plus, series } from '../drivers';
 import ATT_VALUE from './att-value';
 
 import {
-  isNameContinueChar, isWhitespaceChar,
+  isNameContinueChar, isNameStartChar, isWhitespaceChar,
 
   C_UPPER, E_UPPER, F_UPPER, GREATER_THAN, HASH_SIGN, I_UPPER, M_UPPER, N_UPPER,
   O_UPPER, PARENTHESIS_LEFT, PARENTHESIS_RIGHT, PIPE, QUOTE_DBL, QUOTE_SNG,
@@ -33,14 +33,18 @@ export default function * (nodes) {
 
     cp = yield * oneOf(isWhitespaceChar, GREATER_THAN);
 
+    if (cp !== GREATER_THAN) {
+      yield * asterisk(isWhitespaceChar);
+
+      cp = yield * oneOf(isNameStartChar, GREATER_THAN);
+    }
+
     if (cp === GREATER_THAN) {
       break;
     }
 
-    yield * asterisk(isWhitespaceChar);
-
     const attdef = new AttdefDeclaration({
-      name: yield * accreteName()
+      name: yield * accreteName(cp)
     });
 
     attlist.push(attdef);

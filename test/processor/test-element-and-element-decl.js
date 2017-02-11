@@ -140,6 +140,24 @@ tap.test('declared MIXED element (with children, violated)', test => {
   });
 });
 
+tap.test('declared element (with series child, singular)', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo (bar)>
+      <!ELEMENT bar EMPTY>
+      <!ELEMENT baz EMPTY>
+      <!ELEMENT qux EMPTY>
+    ]>
+
+    <foo><bar/></foo>
+  `).then(([ , elem ]) => {
+      test.equal(elem.name, 'foo');
+      test.equal(elem[0].name, 'bar');
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
 tap.test('declared element (with series children)', test => {
   parse(`
     <!DOCTYPE foo [
@@ -252,14 +270,6 @@ tap.test('declared element (with complex children)', test => {
 });
 
 tap.test('declared element (with disallowed pattern)', test => {
-  // That we accept this pattern — which is perfectly rational — may or may not
-  // violate the constraints put forth re: ‘determinism’ and ‘ambiguity’ in the
-  // spec, because the first and final members of the series could be considered
-  // ambiguous on account of the outermost qualifier, a case we aren’t currently
-  // factoring in. I’ll have to research this more to decide whether we are
-  // supposed to barf on this, but for now this test serves to document the
-  // behavior (if we change it, we just change the test to expect an error).
-
   parse(`
     <!DOCTYPE foo [
       <!ELEMENT foo (qux*,qux+)>
@@ -269,6 +279,19 @@ tap.test('declared element (with disallowed pattern)', test => {
     <foo><qux/></foo>
   `).catch(err => {
     test.match(err.message, 'deterministic');
+    test.end();
+  });
+});
+
+tap.test('declared element with undeclared attribute', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+    ]>
+
+    <foo bar="baz"/>
+  `).catch(err => {
+    test.match(err.message, 'bar');
     test.end();
   });
 });
