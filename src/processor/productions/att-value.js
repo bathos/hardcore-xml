@@ -12,6 +12,8 @@ import {
 import GENERAL_REFERENCE from './general-reference';
 
 export default function * (delim, key, attdef, nodes) {
+  const inMarkup = attdef !== nodes;
+
   const pred = delim === QUOTE_DBL
     ? isAttValueCharDbl
     : isAttValueCharSng;
@@ -117,38 +119,40 @@ export default function * (delim, key, attdef, nodes) {
       );
     }
 
-    if (attdef.type === 'NOTATION') {
-      const notation = nodes.doctype.getNotation(normalizedValue);
+    if (inMarkup) {
+      if (attdef.type === 'NOTATION') {
+        const notation = nodes.doctype.getNotation(normalizedValue);
 
-      if (!notation) {
-        yield `notation ${ normalizedValue } to have been declared`;
-      }
-    }
-
-    if (attdef.type.startsWith('ENTIT')) {
-      const entities = normalizedValue
-        .split(/ /g)
-        .map(name => [ name, nodes.doctype.getEntity(name) ]);
-
-      for (const [ name, entity ] of entities) {
-        if (!entity) {
-          yield `entity ${ name } to have been declared`;
-        }
-
-        if (entity.type !== 'UNPARSED') {
-          yield (
-            `value of attribute ${ key } not to refer to a parsed ` +
-            `entity (${ name })`
-          );
+        if (!notation) {
+          yield `notation ${ normalizedValue } to have been declared`;
         }
       }
-    }
 
-    if (attdef.fixed && normalizedValue !== attdef.defaultValue) {
-      yield (
-        `value of attribute ${ key } to only have the #FIXED value ` +
-        `of "${ attdef.defaultValue }"`
-      );
+      if (attdef.type.startsWith('ENTIT')) {
+        const entities = normalizedValue
+          .split(/ /g)
+          .map(name => [ name, nodes.doctype.getEntity(name) ]);
+
+        for (const [ name, entity ] of entities) {
+          if (!entity) {
+            yield `entity ${ name } to have been declared`;
+          }
+
+          if (entity.type !== 'UNPARSED') {
+            yield (
+              `value of attribute ${ key } not to refer to a parsed ` +
+              `entity (${ name })`
+            );
+          }
+        }
+      }
+
+      if (attdef.fixed && normalizedValue !== attdef.defaultValue) {
+        yield (
+          `value of attribute ${ key } to only have the #FIXED value ` +
+          `of "${ attdef.defaultValue }"`
+        );
+      }
     }
   }
 

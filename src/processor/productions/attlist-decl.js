@@ -191,6 +191,6 @@ export default function * (nodes) {
       }
     }
 
-    attdef.defaultValue = yield * ATT_VALUE(cp, attdef.name, attdef, nodes);
+    attdef.defaultValue = yield * ATT_VALUE(cp, attdef.name, attdef, attdef);
   }
 }

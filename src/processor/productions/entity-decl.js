@@ -32,7 +32,7 @@ export default function * (nodes) {
     cp = yield * one(isNameStartChar);
   }
 
-  opts.name = accreteName(cp);
+  opts.name = yield * accreteName(cp);
 
   yield * plus(isWhitespaceChar);
 
