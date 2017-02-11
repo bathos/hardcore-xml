@@ -80,10 +80,6 @@ class Element extends ASTNode {
   }
 
   get definition() {
-    console.log({
-      doctype: Boolean(this.doctype),
-      parent: this.parent && this.parent.typeName
-    })
     return this.name && this.doctype && this.doctype.getElement(this.name);
   }
 
