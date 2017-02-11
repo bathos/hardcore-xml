@@ -18,6 +18,12 @@ import {
 
 const typeCPs = [ C_UPPER, E_UPPER, I_UPPER, N_UPPER, PARENTHESIS_LEFT ];
 
+const hasOneOfSameType = (nodes, name, type) => nodes.doctype
+  .getAll()
+  .filter(node => node.elementName === name)
+  .reduce((acc, node) => [ ...acc, ...node ], [])
+  .some(node => node.type === type);
+
 export default function * (nodes) {
   yield * series(ATTLIST_CPS, 1);
   yield * plus(isWhitespaceChar);
@@ -88,7 +94,15 @@ export default function * (nodes) {
             yield cp;
           }
         } else {
+          if (hasOneOfSameType(nodes, attlist.elementName, 'ID')) {
+            yield (
+              `element ${ attlist.elementName } not to have more than ` +
+              `one attribute of type ID`
+            );
+          }
+
           attdef.type = 'ID';
+
           yield cp;
         }
 
@@ -110,7 +124,15 @@ export default function * (nodes) {
             break;
 
           case O_UPPER:
-            yield * series(NOTATION_CPS);
+            yield * series(NOTATION_CPS, 2);
+
+            if (hasOneOfSameType(nodes, attlist.elementName, 'NOTATION')) {
+              yield (
+                `element ${ attlist.elementName } not to have more than ` +
+                `one attribute of type NOTATION`
+              );
+            }
+
             yield * plus(isWhitespaceChar);
             yield * one(PARENTHESIS_LEFT);
 
@@ -171,10 +193,18 @@ export default function * (nodes) {
 
     yield * plus(isWhitespaceChar);
 
-    cp = yield * oneOf(HASH_SIGN, QUOTE_DBL, QUOTE_SNG);
+    const hashContinuationCPs = [ I_UPPER, R_UPPER ];
+
+    if (attdef.type === 'ID') {
+      yield * one(HASH_SIGN);
+      cp = HASH_SIGN;
+    } else {
+      cp = yield * oneOf(HASH_SIGN, QUOTE_DBL, QUOTE_SNG);
+      hashContinuationCPs.push(F_UPPER);
+    }
 
     if (cp === HASH_SIGN) {
-      switch (yield * oneOf(F_UPPER, I_UPPER, R_UPPER)) {
+      switch (yield * oneOf(...hashContinuationCPs)) {
         case F_UPPER:
           yield * series(FIXED_CPS, 1);
           yield * plus(isWhitespaceChar);

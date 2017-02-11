@@ -169,6 +169,10 @@ class Element extends ASTNode {
     if (attDef.type === 'IDREF') {
       return this.document.findDeepByID(value);
     }
+
+    if (attDef.type === 'NOTATION') {
+      return this.doctype.getNotation(value);
+    }
   }
 
   getReferences(key) {

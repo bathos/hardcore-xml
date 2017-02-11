@@ -140,6 +140,19 @@ tap.test('declared MIXED element (with children, violated)', test => {
   });
 });
 
+tap.test('declared MIXED element (with dupes)', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo (#PCDATA|foo|foo)*>
+    ]>
+
+    <foo><foo/></foo>
+  `).catch(err => {
+    test.match(err.message, 'appear twice');
+    test.end();
+  });
+});
+
 tap.test('declared element (with series child, singular)', test => {
   parse(`
     <!DOCTYPE foo [

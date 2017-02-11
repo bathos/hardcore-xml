@@ -133,48 +133,42 @@ tap.test('supplying of attribute default', test => {
     .then(test.end);
 });
 
-tap.test('default must match grammatical constraints even if unused', test => {
+tap.test('ID type attribute may not have default', test => {
   parse(`
     <!DOCTYPE foo [
       <!ELEMENT foo EMPTY>
-      <!ATTLIST foo
-        bar NMTOKEN '#baz'
-      >
+      <!ATTLIST foo bar ID 'baz'>
     ]>
 
-    <foo/>
+    <foo bar="qux"/>
   `).catch(err => {
-    test.match(err.message, 'NMTOKEN');
+    test.match(err.message, 'ID');
     test.end();
   });
 });
 
-tap.test('default need not match other VCs if never used', test => {
+tap.test('multiple ID attributes per element are invalid', test => {
   parse(`
     <!DOCTYPE foo [
       <!ELEMENT foo EMPTY>
-      <!ATTLIST foo
-        bar ENTITY 'baz'
-      >
-      <!NOTATION corge PUBLIC "grault">
-      <!ENTITY qux SYSTEM "garply" NDATA corge>
+      <!ATTLIST foo bar ID #REQUIRED>
+      <!ATTLIST foo baz ID #REQUIRED>
     ]>
 
-    <foo bar="qux"/>
-  `).then(([ , elem ]) => {
-      test.equal(elem.bar, 'qux');
-    })
-    .catch(test.error)
-    .then(test.end);
+    <foo bar="qux" baz="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'ID');
+    test.end();
+  });
 });
 
-tap.test('ID, IDREF, IDREFS attributes behavior and normalization', test => {
+tap.test('ID, IDREF, IDREFS attributes behavior', test => {
   parse(`
     <!DOCTYPE foo [
       <!ELEMENT foo (foo?)>
       <!ATTLIST foo
-        bar ID #REQUIRED
-        baz IDREF #IMPLIED
+        bar ID     #REQUIRED
+        baz IDREF  #IMPLIED
         qux IDREFS #IMPLIED
       >
     ]>
@@ -204,16 +198,115 @@ tap.test('ID, IDREF, IDREFS attributes behavior and normalization', test => {
     .then(test.end);
 });
 
-tap.test('ID type attribute may not have default', test => {
+tap.test('NOTATION attribute behavior', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!NOTATION qux PUBLIC "qux">
+      <!NOTATION quux SYSTEM "quux">
+      <!NOTATION corge PUBLIC "corgePublic" "corgeSystem">
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar NOTATION (qux|quux|corge) #REQUIRED>
+    ]>
+
+    <foo bar="corge"/>
+  `).then(([ , elem ]) => {
+      test.equal(elem.bar, 'corge');
+      test.equal(elem.notation.name, 'corge');
+      test.equal(elem.notation.publicID, 'corgePublic');
+      test.equal(elem.notation.systemID, 'corgeSystem');
+      test.equal(elem.getReference('bar'), elem.notation);
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('NOTATION redeclaration', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!NOTATION qux PUBLIC "qux">
+      <!NOTATION qux PUBLIC "qux">
+      <!ELEMENT foo EMPTY>
+    ]>
+
+    <foo/>
+  `).catch(err => {
+    test.match(err.message, 'qux');
+    test.end();
+  });
+});
+
+tap.test('multiple NOTATION attributes per element are invalid', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!NOTATION qux PUBLIC "qux">
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo
+        bar NOTATION (qux) #REQUIRED
+        baz NOTATION (qux) #REQUIRED
+      >
+    ]>
+
+    <foo bar="qux" baz="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'NOTATION');
+    test.end();
+  });
+});
+
+tap.test('NMTOKEN & NMTOKENS attribute behavior & normalization', test => {
   parse(`
     <!DOCTYPE foo [
       <!ELEMENT foo EMPTY>
-      <!ATTLIST foo bar ID 'baz'>
+      <!ENTITY d "&#xD;">
+      <!ENTITY a "&#xA;">
+      <!ENTITY da "&#xD;&#xA;">
+      <!ATTLIST foo
+        bar NMTOKEN  #IMPLIED
+        baz NMTOKENS #IMPLIED
+      >
+    ]>
+
+    <foo
+      bar="\n\nxyz"
+      baz="&d;&d;A&a;&#x20;&a;B&da;"
+    />
+  `).then(([ , elem ]) => {
+      test.equal(elem.bar, 'xyz');
+      test.equal(elem.baz, 'A B');
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('default must match grammatical constraints even if unused', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar NMTOKEN '#baz'>
+    ]>
+
+    <foo/>
+  `).catch(err => {
+    test.match(err.message, 'NMTOKEN');
+    test.end();
+  });
+});
+
+tap.test('default need not match other VCs if never used', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo
+        bar ENTITY 'baz'
+      >
+      <!NOTATION corge PUBLIC "grault">
+      <!ENTITY qux SYSTEM "garply" NDATA corge>
     ]>
 
     <foo bar="qux"/>
-  `).catch(err => {
-    test.match(err.message, 'ID');
-    test.end();
-  });
+  `).then(([ , elem ]) => {
+      test.equal(elem.bar, 'qux');
+    })
+    .catch(test.error)
+    .then(test.end);
 });
