@@ -30,7 +30,6 @@ export default function * (nodes) {
       commentCPs.push(HYPHEN, cp);
     } else {
       yield 'valid comment content character or "->" completion of "-->"';
-      return;
     }
   }
 }

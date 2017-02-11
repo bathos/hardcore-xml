@@ -158,7 +158,7 @@ class ASTNode extends Array {
   get nextSibling() {
     const { key, isIndex, parent } = CHILD_PARENT_MAPPING.get(this);
 
-    if (isIndex && key < (this.length - 1)) {
+    if (isIndex && key < (parent.length - 1)) {
       return parent[Number(key) + 1];
     }
   }

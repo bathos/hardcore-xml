@@ -57,7 +57,7 @@ class Element extends ASTNode {
       },
 
       has: (target, key) =>
-        key in this || attr.has(key),
+        key in target || attr.has(toAttrKey(key)),
 
       ownKeys: target =>
         [ ...Reflect.ownKeys(target), ...attr.keys() ],

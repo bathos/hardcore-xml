@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/bathos/hardcore-xml.svg)](https://travis-ci.org/bathos/hardcore-xml)
+[![Coverage Status](https://coveralls.io/repos/github/bathos/hardcore-xml/badge.svg?branch=master)](https://coveralls.io/github/bathos/hardcore-xml?branch=master)
+
 # hardcore xml
 
 A validating xml parser / processor / builder thing.

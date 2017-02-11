@@ -111,7 +111,7 @@ export default function * (elem, elemDecl) {
       if (elemDecl && !elemDecl.matchesContent(elem, name)) {
         yield (
           `not to see element ${ name } in this position (disallowed by the ` +
-          `content specification of element ${ elem.name }`
+          `content spec of element ${ elem.name }`
         );
       }
 
@@ -145,16 +145,16 @@ export default function * (elem, elemDecl) {
     }
 
     if (cp === BRACKET_RIGHT) {
-      const bracketCPs = asterisk(BRACKET_RIGHT, [ cp ]);
-      const cp = yield * oneOf(...entryCPs);
+      const bracketCPs = yield * asterisk(BRACKET_RIGHT, [ cp ]);
+      const nextCP = yield * oneOf(...entryCPs);
 
-      if (bracketCPs.length > 1 && cp === GREATER_THAN) {
+      if (bracketCPs.length > 1 && nextCP === GREATER_THAN) {
         yield `valid element content (sequence "]]>" may not appear in CDATA)`;
       }
 
       cdataCPs.push(...bracketCPs);
 
-      yield cp;
+      yield nextCP;
       continue;
     }
 

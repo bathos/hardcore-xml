@@ -20,7 +20,7 @@ export default function * CONTENT_SPEC(cp) {
 
       contentSpec.push(yield * CONTENT_SPEC(cp));
 
-      if (contentSpec.hasAmbiguousSequences) {
+      if (contentSpec.hasAmbiguousSequence) {
         yield (
           `not to encounter content spec grammar that the XML spec ` +
           `considers non-deterministic`
@@ -48,7 +48,7 @@ export default function * CONTENT_SPEC(cp) {
     }
   } else {
     contentSpec.type = 'ELEMENT';
-    contentSpec.name = yield * accreteName();
+    contentSpec.name = yield * accreteName(cp);
   }
 
   const lastCP = yield;

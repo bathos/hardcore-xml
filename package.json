@@ -35,7 +35,7 @@
     "build-cjs": "rollup -c -f cjs -o dist/hardcore.cjs.js",
     "lint": "eslint src",
     "prepublish": "npm run lint && npm run test",
-    "test": "npm run build-cjs && TAP_RCFILE=./.taprc tap test/**/*.js"
+    "test": "npm run build-cjs && TAP_RCFILE=./.taprc tap test/**/test-*.js"
   },
   "version": "1.0.0"
 }

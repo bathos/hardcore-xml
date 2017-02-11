@@ -54,7 +54,6 @@ export default function * (nodes, providedName) {
           continue;
         } else {
           yield 'valid processing instruction characters or ">" of "?>"';
-          return;
         }
       }
     }

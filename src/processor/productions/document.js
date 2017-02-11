@@ -30,7 +30,7 @@ export default function * () {
 
     if (cp === EOF) {
       if (!document.root) {
-        return 'document to have root element';
+        yield 'document to have root element';
       }
 
       return;
@@ -58,9 +58,9 @@ export default function * () {
         }
       }
 
-      xmlDeclPossible = false;
-
       if (cp === EXCLAMATION_POINT) {
+        xmlDeclPossible = false;
+
         const cp = yield;
 
         if (cp === HYPHEN) {
@@ -73,29 +73,33 @@ export default function * () {
           continue;
         }
 
-        return document.doctype || document.root
+        yield (document.doctype || document.root
           ? 'first "-" of comment ("<!--")'
-          : 'first "-" of comment ("<!--") or "D" ("<!DOCTYPE")';
+          : 'first "-" of comment ("<!--") or "D" ("<!DOCTYPE")'
+        );
       }
 
       if (isNameStartChar(cp) && !document.root) {
+        xmlDeclPossible = false;
+
         const name = yield * accreteName(cp);
 
         if (document.doctype && document.doctype.name !== name) {
-          return `root element to be named ${ document.doctype.name }`;
+          yield `root element to be named ${ document.doctype.name }`;
         }
 
         yield * ELEMENT(document, name);
         continue;
       }
 
-      return xmlDeclPossible
+      yield (xmlDeclPossible
         ? '"?" (xml decl, PI), "!" (comment, doctype decl), or element name'
         : document.root
           ? '"?" (PI) or "!" (comment)'
           : document.doctype
             ? '"?" (PI), "!" (comment), or element name'
-            : '"?" (PI), "!" (comment, doctype decl), or element name';
+            : '"?" (PI), "!" (comment, doctype decl), or element name'
+      );
     }
 
     if (isWhitespaceChar(cp)) {
@@ -103,12 +107,13 @@ export default function * () {
       continue;
     }
 
-    return xmlDeclPossible
+    yield (xmlDeclPossible
       ? '"<" (xml decl, PI, comment, doctype decl, element) or whitespace'
       : document.root
         ? '"<" (PI, comment) or whitespace'
         : document.doctype
           ? '"<" (PI, comment, root element) or whitespace'
-          : '"<" (PI, comment, root element, doctype decl) or whitespace';
+          : '"<" (PI, comment, root element, doctype decl) or whitespace'
+    );
   }
 }

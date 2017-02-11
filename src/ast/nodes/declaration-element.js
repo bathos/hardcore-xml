@@ -95,7 +95,7 @@ class ElementDeclaration extends ASTNode {
         node instanceof CDATA ||
         node instanceof Comment ||
         node instanceof ProcessingInstruction ||
-        (node instanceof Element && permittedNames.has(node.name))
+        (node instanceof Element && permittedNames.includes(node.name))
       );
     }
 

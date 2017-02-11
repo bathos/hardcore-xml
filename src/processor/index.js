@@ -91,7 +91,7 @@ class Processor extends Decoder {
 
     // Event handling
 
-    this.on('error', err => {
+    this.on('error', () => {
       this.haltAndCatchFire();
     });
 
@@ -126,6 +126,28 @@ class Processor extends Decoder {
 
     while (true) {
       let cp = greedHoldover || injectedCPs.shift() || (yield);
+
+      greedHoldover = undefined;
+
+      // Chaos mode is what I’ve called the conditions under which subset
+      // parsing occurs when it is either external or a the expansion of an
+      // entity which was defined externally. Parameter references can suddenly
+      // show up in just about any position and be valid, or at least, are
+      // theoretically legal until their expansion proves otherwise. To handle
+      // this without going completely insane, we wrap the inner iterator in a
+      // special ‘middle’ driver that manages these rogue expansions and
+      // enforces a few rules: the effect is temporarilly disabled by entry into
+      // a literal, and outside a literal, paired parens must be in the same
+      // expansion space. Boundries for markup proper is managed in interior
+      // grammar productions, since these apply whether chaos mode is active or
+      // not. Beyond these constraints and one special case for the "%" that may
+      // appear in entity declarations themselves, it’s anarchy.
+      //
+      // The ‘chaosMode’ value itself is incremented by either the CHAOS_PLEASE
+      // signal (which comes from external DTDs; there is no corresponding
+      // decrement signal since this will be true for the entire DTD) or as a
+      // side-effect of expanding entities which have external sources (the
+      // decrement occurs when the expansion completes).
 
       if (chaosMode) {
         if (cp === PERCENT_SIGN && !chaosDelim) {
@@ -164,80 +186,116 @@ class Processor extends Decoder {
         }
       }
 
+      // Now the regular stuff (which still occurs even in chaos mode). While
+      // the majority of activity is codepoints passing inward, grammar
+      // productions need to ‘talk back’ to the base driver in many cases, which
+      // are described below.
+
       const activeIter = chaosIter || iter;
 
       let res = activeIter.next(cp);
 
-      if (res.value instanceof Array) {
-        injectedCPs.push(...res.value);
-        res = activeIter.next();
-        continue;
-      } else if (typeof res.value === 'object') {
-        switch (res.value.signal) {
-          case 'CHAOS?':
-            res = activeIter.next(Boolean(chaosMode));
-            break;
+      // Some of the res values represent special transactions between the
+      // grammar production logic and the processor. This is a loop because in
+      // those cases, `res` may be supplanted be a new value that sometimes will
+      // still require the same handling.
 
-          case 'CHAOS_PLEASE':
-            chaosMode++;
-            res = activeIter.next();
-            break;
+      while (true) {
 
-          case 'DEREFERENCE_DTD':
-            this.dereference('extSubset', 'DOCTYPE', res.value.value, node);
+        // Expectation failure. If a string is yielded, it represents an
+        // expectation message intended for use in composing an error.
 
-            res = activeIter.next();
-
-            break;
-
-          case 'EXPAND_ENTITY':
-            {
-              const { entity, pad } = res.value.value;
-
-              const cb = entity.hasExternalOrigin
-                ? () => chaosMode--
-                : () => undefined;
-
-              if (entity.hasExternalOrigin) {
-                chaosMode++;
-              }
-
-              res = activeIter.next(this.expandEntity({ entity, pad }, cb));
-            }
-
-            break;
-
-          case 'EXPANSION_BOUNDARY':
-            res = activeIter.next(this.boundary());
-            break;
-
-          case 'SET_ENCODING':
-            this.setXMLEncoding(res.value.value, 'declared');
-            res = activeIter.next();
-            break;
+        if (typeof res.value === 'string') {
+          this.expected(cp, res.value);
+          return;
         }
-      }
 
-      if (typeof res.value === 'number') {
-        greedHoldover = res.value;
-        res = activeIter.next();
-      } else {
-        greedHoldover = undefined;
-      }
+        // Iterator closing. Normally this means an EOF was received happily.
+        // However it may also be the closing of a local parameter reference
+        // iterator inaugurating chaos mode.
 
-      if (typeof res.value === 'string') {
-        this.expected(cp, res.value);
-        return;
-      }
+        if (res.done) {
+          if (chaosIter) {
+            chaosIter = undefined;
+            break;
+          }
 
-      if (res.done) {
-        if (chaosIter) {
-          chaosIter = undefined;
+          this.emit('ast', node);
+          return;
+        }
+
+        // Vanilla. Most of the time, there is no yielded response; the
+        // codepoint was successfully consumed and the next expected value is
+        // the next codepoint.
+
+        if (!res.value) {
+          break;
+        }
+
+        // Greed artifact. Some of the low level drivers are greedy and others
+        // are not — i.e., the greedy ones always need to see one more codepoint
+        // than ‘belongs’ to them to determine their own conclusion. In these
+        // cases, the codepoint is barfed back up, so that we can maintain a
+        // more consistent and predictable interface (that is, superficially,
+        // each driver behaves as if it consumed only what it used).
+
+        if (typeof res.value === 'number') {
+          greedHoldover = res.value;
+          res = activeIter.next();
           continue;
         }
 
-        this.emit('ast', node);
-        break;
+        // Grammar-inserted arbitrary content. This is used to provision default
+        // attribute values in elements.
+
+        if (res.value instanceof Array) {
+          injectedCPs.push(...res.value);
+          res = activeIter.next();
+          continue;
+        }
+
+        // Signals. The remaining items are mechanisms by which the grammars can
+        // request specific behaviors of information from the parser. Originally
+        // the grammars were all methods of this one class, but it was *huge*
+        // and it prevented me from seeing clearly where the ‘interface’ really
+        // was between the two concepts. The signal system lets them live apart
+        // and gives us this nice little catalogue of exactly which things the
+        // production iterators are able to do back at home.
+
+        switch (res.value.signal) {
+          case 'CHAOS?':
+            res = activeIter.next(Boolean(chaosMode));
+            continue;
+          case 'CHAOS_PLEASE':
+            chaosMode++;
+            res = activeIter.next();
+            continue;
+          case 'DEREFERENCE_DTD':
+            this.dereference('extSubset', 'DOCTYPE', res.value.value, node);
+            res = activeIter.next();
+            continue;
+          case 'EXPAND_ENTITY': {
+            const { entity, pad } = res.value.value;
+
+            const cb = entity.hasExternalOrigin
+              ? () => chaosMode--
+              : () => undefined;
+
+            if (entity.hasExternalOrigin) {
+              chaosMode++;
+            }
+
+            res = activeIter.next(this.expandEntity({ entity, pad }, cb));
+            continue;
+          }
+          case 'EXPANSION_BOUNDARY':
+            res = activeIter.next(this.boundary());
+            continue;
+          case 'SET_ENCODING':
+            this.setXMLEncoding(res.value.value, 'declared');
+            res = activeIter.next();
+            continue;
+        }
       }
     }
   }
@@ -316,12 +374,14 @@ class Processor extends Decoder {
   //
   // <poop>&ass;/poop>
   //
-  // When we hit "&", we call boundary() to get the "locking" function. When we
-  // hit "<", we call the locking function to get the "explode" function. When
-  // we hit the "/", we call the explode function, and because we "locked on" at
-  // the "<", even though we are now back in the original context, it explodes.
-  // (There’s a bit boundary stuff that would occur in that example, but that
-  // covers the main idea).
+  // When we end "<poop>" and begin processing CONTENT, we call boundary(),
+  // which returns the "locking" function. When we hit "<", we call the locking
+  // function to get the "explode" function. When we hit the "/", we call that
+  // explode function, since this means CONTENT has ended. Although we are now
+  // back in the original expansion context of CONTENT, it explodes, because we
+  // "locked on" at the "<", which was still in the interior expansion context.
+  // (There’s a bit more that would occur in that example, but that covers the
+  // main idea).
 
   boundary() {
     const [ initialContext ] = this.activeExpansions;

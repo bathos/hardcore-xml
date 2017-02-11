@@ -19,7 +19,7 @@ class ContentSpecDeclaration extends ASTNode {
 
   get hasAmbiguousSequence() {
     return this
-      .slice(1, -1)
+      .slice(0, -1)
       .filter(node => node.qualifier)
       .some(node => {
         const entryNames = node.entryNames();
@@ -29,17 +29,33 @@ class ContentSpecDeclaration extends ASTNode {
       });
   }
 
-  get _pattern() {
-    if (this.type === 'ELEMENT') {
-      return `( ${ this.name })${ this.qualifier }`;
+  get _partialPattern() {
+    if (this.type === 'SEQUENCE') {
+      return `(${ this._pattern })*${
+        this.reduceRight((acc, cs) =>
+          `(${ cs._partialPattern }(${ acc._partialPattern || acc })?)`
+        )
+      }`;
     }
 
-    if (this.type === 'SERIES') {
-      return `(${ this.map(cs => cs._pattern).join('') })${ this.qualifier }`;
+    return this._pattern;
+  }
+
+  get _pattern() {
+    if (this.type === 'ELEMENT') {
+      return `( ${ this.name })${ this.qualifier || '' }`;
+    }
+
+    if (this.type === 'SEQUENCE') {
+      return (
+        `(${ this.map(cs => cs._pattern).join('') })${ this.qualifier || '' }`
+      );
     }
 
     if (this.type === 'CHOICE') {
-      return `(${ this.map(cs => cs._pattern).join('|') })${ this.qualifier }`;
+      return (
+        `(${ this.map(cs => cs._pattern).join('|') })${ this.qualifier || '' }`
+      );
     }
   }
 
@@ -56,7 +72,7 @@ class ContentSpecDeclaration extends ASTNode {
       return this.reduce((acc, node) => [ ...acc, ...node.entryNames() ], []);
     }
 
-    if (this.type === 'SERIES') {
+    if (this.type === 'SEQUENCE') {
       const names = [];
 
       for (const node of this) {
@@ -74,7 +90,7 @@ class ContentSpecDeclaration extends ASTNode {
   }
 
   partialPattern() {
-    return new RegExp(`^${ this._pattern }`);
+    return new RegExp(`^${ this._partialPattern }$`);
   }
 
   pattern() {

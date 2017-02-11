@@ -6,7 +6,7 @@ import { accreteName, asterisk, one, oneOf, plus, series } from '../drivers';
 import CONTENT_SPEC from './content-spec';
 
 import {
-  isWhitespaceChar,
+  isNameStartChar, isWhitespaceChar,
 
   A_UPPER, ASTERISK, E_UPPER, GREATER_THAN, HASH_SIGN, PARENTHESIS_LEFT,
   PARENTHESIS_RIGHT, PIPE,
@@ -38,7 +38,8 @@ export default function * (nodes) {
     elemDecl.contentSpec = 'EMPTY';
   } else {
     yield * asterisk(isWhitespaceChar);
-    const cp = yield * oneOf(HASH_SIGN, PARENTHESIS_LEFT);
+
+    const cp = yield * oneOf(HASH_SIGN, PARENTHESIS_LEFT, isNameStartChar);
 
     if (cp === HASH_SIGN) {
       yield * series(PCDATA_CPS, 1);
@@ -71,7 +72,8 @@ export default function * (nodes) {
 
       yield * one(ASTERISK);
     } else {
-      elemDecl.contentSpec = yield * CONTENT_SPEC(cp);
+      yield cp;
+      elemDecl.contentSpec = yield * CONTENT_SPEC(PARENTHESIS_LEFT);
     }
   }
 
