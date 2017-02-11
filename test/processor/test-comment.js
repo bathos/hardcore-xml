@@ -11,6 +11,7 @@ tap.test('comment', test => {
     .catch(test.error)
     .then(test.end);
 });
+
 tap.test('comment (including hyphens)', test => {
   parse('<!---f-o-o--><bar/>')
     .then(([ comment ]) => {
