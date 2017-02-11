@@ -198,6 +198,45 @@ tap.test('ID, IDREF, IDREFS attributes behavior', test => {
     .then(test.end);
 });
 
+tap.test('ENTITY/ENTITIES attribute behavior', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!NOTATION quux PUBLIC "quux">
+      <!ENTITY qux PUBLIC "qux" "qux" NDATA quux>
+      <!ENTITY corge PUBLIC "corge" "corge" NDATA quux>
+      <!ATTLIST foo
+        bar ENTITY   #IMPLIED
+        baz ENTITIES #IMPLIED
+      >
+    ]>
+
+    <foo bar="qux" baz="qux corge"/>
+  `).then(([ , elem ]) => {
+      test.equal(elem.bar, 'qux');
+      test.equal(elem.baz, 'qux corge');
+      test.equal(elem.getReference('bar').type, 'UNPARSED');
+      test.equal(elem.getReferences('baz')[1].type, 'UNPARSED');
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('ENTITY must be unparsed', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ENTITY qux "quux">
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar ENTITY #REQUIRED>
+    ]>
+
+    <foo bar="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'parsed entity');
+    test.end();
+  });
+});
+
 tap.test('NOTATION attribute behavior', test => {
   parse(`
     <!DOCTYPE foo [
@@ -220,6 +259,21 @@ tap.test('NOTATION attribute behavior', test => {
     .then(test.end);
 });
 
+tap.test('NOTATION attribute duplicated enum', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!NOTATION qux PUBLIC "qux">
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar NOTATION (qux|qux) #REQUIRED>
+    ]>
+
+    <foo bar="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'qux');
+    test.end();
+  });
+});
+
 tap.test('NOTATION redeclaration', test => {
   parse(`
     <!DOCTYPE foo [
@@ -231,6 +285,21 @@ tap.test('NOTATION redeclaration', test => {
     <foo/>
   `).catch(err => {
     test.match(err.message, 'qux');
+    test.end();
+  });
+});
+
+tap.test('undeclared NOTATION', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!NOTATION qux PUBLIC "qux">
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar NOTATION (qux|quux) #REQUIRED>
+    ]>
+
+    <foo bar="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'quux');
     test.end();
   });
 });
@@ -276,6 +345,36 @@ tap.test('NMTOKEN & NMTOKENS attribute behavior & normalization', test => {
     })
     .catch(test.error)
     .then(test.end);
+});
+
+tap.test('enumerated attribute type behavior', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar (baz|qux|quux) #REQUIRED>
+    ]>
+
+    <foo bar="qux"/>
+  `).then(([ , elem ]) => {
+      test.equal(elem.bar, 'qux');
+      test.same(elem.definition.getAttDef('bar').enumeration, new Set([ 'baz', 'qux', 'quux' ]));
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('enumerated nmtoken atttype cannot have dupes', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar (baz|qux|qux) #REQUIRED>
+    ]>
+
+    <foo bar="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'qux');
+    test.end();
+  });
 });
 
 tap.test('default must match grammatical constraints even if unused', test => {

@@ -175,7 +175,9 @@ export default function * (nodes) {
         while (true) {
           yield * asterisk(isWhitespaceChar);
 
-          const token = yield * plus(isNameContinueChar);
+          const token = String.fromCodePoint(
+            ...yield * plus(isNameContinueChar, undefined, [])
+          );
 
           if (attdef.enumeration.has(token)) {
             yield `nmtoken ${ token } not to appear twice in attdef enum`;
