@@ -1,12 +1,6 @@
 const CHILD_PARENT_MAPPING = new WeakMap();
 
-const MAX_INDEX = 2 ** 32 - 2;
-
-const isArrayIndex = key =>
-  typeof key === 'string' &&
-  key >= 0 &&
-  String(Number.parseInt(key)) === key &&
-  key < MAX_INDEX;
+import { isArrayIndex } from './ast-util';
 
 export default
 class ASTNode extends Array {

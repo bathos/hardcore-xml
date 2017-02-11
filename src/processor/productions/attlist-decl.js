@@ -78,7 +78,7 @@ export default function * (nodes) {
         cp = yield * oneOf(R_UPPER, isWhitespaceChar);
 
         if (cp === R_UPPER) {
-          yield * series(IDREF_CPS, 2);
+          yield * series(IDREF_CPS, 3);
           cp = yield;
 
           if (cp === S_UPPER) {

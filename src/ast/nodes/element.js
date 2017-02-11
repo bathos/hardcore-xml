@@ -5,7 +5,9 @@ import Comment               from './comment';
 import ProcessingInstruction from './processing-instruction';
 import text                  from '../text';
 
-import { isName, isNmtoken, isString, isXMLString } from '../ast-util';
+import {
+  isArrayIndex, isName, isNmtoken, isString, isXMLString
+} from '../ast-util';
 
 export default
 class Element extends ASTNode {
@@ -28,7 +30,7 @@ class Element extends ASTNode {
           return key.slice(1);
         }
 
-        if (!(key in this)) {
+        if (!(key in this) && !isArrayIndex(key)) {
           return key;
         }
       }
@@ -78,6 +80,10 @@ class Element extends ASTNode {
   }
 
   get definition() {
+    console.log({
+      doctype: Boolean(this.doctype),
+      parent: this.parent && this.parent.typeName
+    })
     return this.name && this.doctype && this.doctype.getElement(this.name);
   }
 
@@ -85,7 +91,8 @@ class Element extends ASTNode {
     const elemDecl = this.definition;
 
     if (elemDecl) {
-      const attDef = elemDecl.getAttDefs().find(def => def.type === 'ID');
+      const attDef = [ ...elemDecl.getAttDefs().values() ]
+        .find(def => def.type === 'ID');
 
       if (attDef) {
         return this.getAttribute(attDef.name);
@@ -97,7 +104,8 @@ class Element extends ASTNode {
     const elemDecl = this.definition;
 
     if (elemDecl) {
-      const attDef = elemDecl.getAttDefs().find(def => def.type === 'ID');
+      const attDef = [ ...elemDecl.getAttDefs().values() ]
+        .find(def => def.type === 'ID');
 
       if (attDef) {
         this.setAttribute(attDef.name, value);
@@ -114,7 +122,8 @@ class Element extends ASTNode {
     const elemDecl = this.definition;
 
     if (elemDecl) {
-      const attDef = elemDecl.getAttDefs().find(def => def.type === 'NOTATION');
+      const attDef = [ ...elemDecl.getAttDefs().values() ]
+        .find(def => def.type === 'NOTATION');
 
       if (attDef) {
         const name = this.getAttribute(attDef.name);

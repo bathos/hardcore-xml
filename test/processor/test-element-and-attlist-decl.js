@@ -167,3 +167,53 @@ tap.test('default need not match other VCs if never used', test => {
     .catch(test.error)
     .then(test.end);
 });
+
+tap.test('ID, IDREF, IDREFS attributes behavior and normalization', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo (foo?)>
+      <!ATTLIST foo
+        bar ID #REQUIRED
+        baz IDREF #IMPLIED
+        qux IDREFS #IMPLIED
+      >
+    ]>
+
+    <foo bar="corge ">
+      <foo
+        bar="quux"
+        baz="quux"
+        qux="
+          quux
+          corge
+        "
+      />
+    </foo>
+  `).then(([ , fooA ]) => {
+      const [ fooB ] = fooA;
+
+      test.equal(fooA.bar, 'corge');
+      test.equal(fooA.id, 'corge');
+      test.equal(fooB.bar, 'quux');
+      test.equal(fooB.baz, 'quux');
+      test.equal(fooB.qux, 'quux corge');
+      test.equal(fooB.getReference('baz'), fooB);
+      test.equal(fooB.getReferences('qux')[1], fooA);
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('ID type attribute may not have default', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar ID 'baz'>
+    ]>
+
+    <foo bar="qux"/>
+  `).catch(err => {
+    test.match(err.message, 'ID');
+    test.end();
+  });
+});

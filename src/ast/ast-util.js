@@ -5,6 +5,9 @@ import {
   isXMLChar
 } from '../data/codepoints';
 
+
+const MAX_INDEX = 2 ** 32 - 2;
+
 const toCodepoints = str =>
   Array
     .from(str)
@@ -15,6 +18,12 @@ export const escapeCDATA = str =>
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/\]\]>/g, ']]&gt;');
+
+export const isArrayIndex = key =>
+  typeof key === 'string' &&
+  key >= 0 &&
+  String(Number.parseInt(key)) === key &&
+  key < MAX_INDEX;
 
 export const isBoolean = bool =>
   typeof bool === 'boolean';

@@ -156,5 +156,5 @@ export default function * (delim, key, attdef, nodes) {
     }
   }
 
-  return String.fromCodePoint(...attValueCPs);
+  return normalizedValue;
 }
