@@ -41,7 +41,7 @@ export default function * (document) {
     doctype.publicID = publicID;
     doctype.systemID = systemID;
     yield * asterisk(isWhitespaceChar);
-    cp = yield;
+    cp = yield * oneOf(BRACKET_LEFT, GREATER_THAN);
   }
 
   document.push(doctype);
@@ -50,16 +50,14 @@ export default function * (document) {
     yield * SUBSET(doctype);
     yield * one(BRACKET_RIGHT);
     yield * asterisk(isWhitespaceChar);
-    cp = yield;
+    cp = yield * one(GREATER_THAN);
   }
 
-  if (cp === GREATER_THAN) {
-    if (doctype.systemID) {
-      yield {
-        signal: 'DEREFERENCE_DTD',
-        value: doctype
-      };
-    }
-    return;
+  if (doctype.systemID) {
+    yield {
+      signal: 'DEREFERENCE_DTD',
+      value: doctype
+    };
   }
+  return;
 }
