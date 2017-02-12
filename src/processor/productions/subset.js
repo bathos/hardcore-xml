@@ -1,5 +1,5 @@
 import {
-  asterisk, one, oneOf, series
+  accreteName, asterisk, one, oneOf, series
 } from '../drivers';
 
 import ATTLIST_DECL        from './attlist-decl';
@@ -10,6 +10,7 @@ import IGNORE_SECT         from './ignore-sect';
 import NOTATION_DECL       from './notation-decl';
 import PARAMETER_REFERENCE from './parameter-reference';
 import PROC_INST           from './proc-inst';
+import XML_DECL            from './xml-decl';
 
 import {
   isWhitespaceChar,
@@ -21,13 +22,19 @@ import {
   IGNORE_CPS, INCLUDE_CPS
 } from '../../data/codepoints';
 
-export default function * SUBSET(nodes) {
+export default function * SUBSET(nodes, extStart) {
+  const includeBoundaries = [];
+
+  let textDeclPossible = extStart;
+
+  if (textDeclPossible) {
+    yield { signal: 'SUPPRESS_CHAOS' };
+  }
+
   while (true) {
-    const includeBoundaries = [];
-
-    yield * asterisk(isWhitespaceChar);
-
-    const cp = yield;
+    const cp = textDeclPossible
+      ? yield
+      : (yield * asterisk(isWhitespaceChar), yield);
 
     if (cp === LESS_THAN) {
       const markupBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
@@ -35,21 +42,35 @@ export default function * SUBSET(nodes) {
       const cp = yield * oneOf(EXCLAMATION_POINT, QUESTION_MARK);
 
       if (cp === QUESTION_MARK) {
+        let name;
+
+        if (textDeclPossible) {
+          textDeclPossible = false;
+          name = yield * accreteName();
+
+          if (name === 'xml') {
+            yield * XML_DECL(undefined, true);
+            yield { signal: 'UNSUPPRESS_CHAOS' };
+            continue;
+          }
+        }
+
         yield { signal: 'SUPPRESS_CHAOS' };
-        yield * PROC_INST(nodes);
+        yield * PROC_INST(nodes, name);
         yield { signal: 'UNSUPPRESS_CHAOS' };
         markupBoundary()();
         continue;
+      }
+
+      if (textDeclPossible) {
+        textDeclPossible = false;
+        yield { signal: 'UNSUPPRESS_CHAOS' };
       }
 
       const possibleCPs = [ A_UPPER, E_UPPER, HYPHEN, N_UPPER ];
 
       if (yield { signal: 'CHAOS?' }) {
         possibleCPs.push(BRACKET_LEFT);
-      }
-
-      if (includeBoundaries.length) {
-        possibleCPs.push(BRACKET_RIGHT);
       }
 
       switch (yield * oneOf(...possibleCPs)) {
@@ -78,10 +99,6 @@ export default function * SUBSET(nodes) {
               continue;
           }
           break;
-        case BRACKET_RIGHT:
-          yield * series([ BRACKET_RIGHT, BRACKET_RIGHT, GREATER_THAN ], 1);
-          includeBoundaries.pop()()(); // so bouncy
-          break;
         case A_UPPER:
           yield * ATTLIST_DECL(nodes);
           break;
@@ -104,13 +121,28 @@ export default function * SUBSET(nodes) {
       continue;
     }
 
+    if (textDeclPossible) {
+      textDeclPossible = false;
+      yield { signal: 'UNSUPPRESS_CHAOS' };
+    }
+
     if (cp === PERCENT_SIGN) {
       yield * PARAMETER_REFERENCE(nodes, false);
       continue;
     }
 
     if (includeBoundaries.length) {
+      if (cp === BRACKET_RIGHT) {
+        yield * series([ BRACKET_RIGHT, BRACKET_RIGHT, GREATER_THAN ], 1);
+        includeBoundaries.pop()()(); // so bouncy
+        continue;
+      }
+
       yield `terminal "]]>" of included section`;
+    }
+
+    if (isWhitespaceChar(cp)) {
+      continue;
     }
 
     yield cp;

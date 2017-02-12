@@ -41,7 +41,11 @@ export const one = function * (pred, exp, acc) {
   if (pred instanceof Function ? pred(cp) : cp === pred) {
     acc && acc.push(cp);
   } else {
-    yield (exp || pred.description || `"${ String.fromCodePoint(pred) }"`);
+    yield (
+      exp ||
+      pred.description ||
+      (Number.isFinite(pred) ? `"${ String.fromCodePoint(pred) }"` : 'EOF')
+    );
   }
 
   return acc;
@@ -88,27 +92,33 @@ export const question = function * (pred, acc) {
 // Eats codepoints matching exactly the input series. Index may be provided to
 // begin at a point other than the start.
 
-export const series = function * (expectedCPs, index, acc) {
-  const counts = {};
+export const series = function * (expectedCPs, startIndex, acc) {
+  const subset = startIndex
+    ? expectedCPs.slice(startIndex)
+    : expectedCPs;
 
-  const subset = index ? expectedCPs.slice(index) : expectedCPs;
+  let index = startIndex;
 
   for (const expectedCP of subset) {
-    counts[expectedCP] = (counts[expectedCP] || 0) + 1;
 
     const cp = yield;
 
     if (cp === expectedCP) {
       acc && acc.push(cp);
+      index++;
       continue;
     }
 
     const str = String.fromCodePoint(...expectedCPs);
     const chr = String.fromCodePoint(expectedCP);
     const exp = `"${ chr }" of "${ str }"`;
+    const cnt = expectedCPs.filter(cp => cp === expectedCP).length;
 
-    if (str.indexOf(chr) !== str.lastIndexOf(chr)) {
-      const n = counts[expectedCP];
+    if (cnt > 1) {
+      const n = expectedCPs
+        .slice(0, index + 1)
+        .filter(cp => cp === expectedCP)
+        .length;
 
       // We can be lazy — three Ts in ATTLIST is as high as it goes.
 

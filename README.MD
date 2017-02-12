@@ -1,5 +1,6 @@
 [![Build Status](https://travis-ci.org/bathos/hardcore-xml.svg)](https://travis-ci.org/bathos/hardcore-xml)
 [![Coverage Status](https://coveralls.io/repos/github/bathos/hardcore-xml/badge.svg?branch=master)](https://coveralls.io/github/bathos/hardcore-xml?branch=master)
+[![npm version](https://badge.fury.io/js/hardcore.svg)](https://badge.fury.io/js/hardcore)
 
 # hardcore xml
 
@@ -12,7 +13,6 @@ A validating xml parser / processor / builder thing.
   - [why](#why)
   - [how hardcore](#how-hardcore)
   - [stuff to know](#stuff-to-know)
-  - [how awful is xml](#how-awful-is-xml)
 - [i want to use this](#i-want-to-use-this)
   - [i have a string make it be xml](#i-have-a-string-make-it-be-xml)
   - [i have a stream that all menafiefiewfheiniupu9](#i-have-a-stream-that-all-menafiefiewfheiniupu9)
@@ -132,10 +132,6 @@ follow the same grammar, or have the same effects.
 However, MathML and SVG, both of which can appear within HTML documents, do
 follow the XML grammar (and they have DTDs as well). Both are suitable for
 processing with hardcore.
-
-### how awful is xml
-
-oh my god it’s so awful yeah
 
 ## i want to use this
 

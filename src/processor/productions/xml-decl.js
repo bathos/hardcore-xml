@@ -31,20 +31,17 @@ export default function * (document, isTextDecl) {
     yield * plus(isDecChar);
     yield * one(delim);
 
-    const after = yield * oneOf(isWhitespaceChar, QUESTION_MARK);
+    cp = yield * oneOf(isWhitespaceChar, QUESTION_MARK);
 
-    if (after === QUESTION_MARK) {
+    if (cp !== QUESTION_MARK) {
+      yield * asterisk(isWhitespaceChar);
+      cp = yield;
+    } else if (!isTextDecl) {
       yield * one(GREATER_THAN);
       return;
     }
-
-    yield * asterisk(isWhitespaceChar);
-
-    cp = yield;
-
   } else if (!isTextDecl) {
     yield '"v" of "version"';
-    return;
   }
 
   if (isTextDecl && cp !== E_LOWER) {

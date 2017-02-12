@@ -13,8 +13,12 @@ export default function * (document) {
 
   document.doctype.external = extSubset;
 
-  yield { signal: 'CHAOS_PLEASE' };
+  // Being a terminal/entry production, we have not yet entered the main loop of
+  // the grammar driver; to get the ball rolling, we need to bounce a CP before
+  // we can start issuing signals.
 
-  yield * SUBSET(extSubset);
+  yield yield;
+  yield { signal: 'CHAOS_PLEASE' };
+  yield * SUBSET(extSubset, true);
   yield * one(EOF);
 }

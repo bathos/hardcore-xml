@@ -36,9 +36,9 @@ behaviors shared by all nodes.
     - [`document.findDeepByID\(id\)`](#documentfinddeepbyidid)
   - [Element](#element)
     - [`element.definition`](#elementdefinition)
-      - [`element.id`](#elementid)
+    - [`element.id`](#elementid)
     - [`element.name`](#elementname)
-      - [`element.notation`](#elementnotation)
+    - [`element.notation`](#elementnotation)
     - [`element.allAttributes\(\)`](#elementallattributes)
     - [`element.getAttribute\(key\)`](#elementgetattributekey)
     - [`element.getReference\(key\)`](#elementgetreferencekey)
@@ -333,7 +333,7 @@ sequence may be constrained by a corresponding `ElementDeclaration`.
 
 Reference to corresponding `ElementDeclaration` if applicable.
 
-##### `element.id`
+#### `element.id`
 
 An element may have at most one attribute of type `ID`. Regardless of its name,
 if such an attribute exists, it is also available via the alias `elem.id`. An ID
@@ -360,7 +360,7 @@ non-hierachical (even cyclic).
 String, a valid name. If there is a `DoctypeDeclaration`, must have a
 corresponding `ElementDeclaration`.
 
-##### `element.notation`
+#### `element.notation`
 
 If an element has an attribute of type `NOTATION` (like `ID`, there can be only
 one such attribute per element), the property `elem.notation` will be a

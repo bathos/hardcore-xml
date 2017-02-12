@@ -9,7 +9,7 @@ export default function * IGNORE_SECT() {
   while (true) {
     const bracketRightCPs = yield * asterisk(BRACKET_RIGHT, []);
 
-    if (bracketRightCPs.length > 2) {
+    if (bracketRightCPs.length >= 2) {
       const cp = yield;
 
       if (cp === GREATER_THAN) {
@@ -23,8 +23,6 @@ export default function * IGNORE_SECT() {
     const lessThanCPs = yield * asterisk(LESS_THAN, []);
 
     if (lessThanCPs.length) {
-      const sectionBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
-
       const cp = yield;
 
       if (cp === EXCLAMATION_POINT) {
@@ -32,7 +30,6 @@ export default function * IGNORE_SECT() {
 
         if (cp === BRACKET_LEFT) {
           yield * IGNORE_SECT();
-          sectionBoundary()();
           continue;
         }
 
