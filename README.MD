@@ -11,6 +11,7 @@ A validating xml parser / processor / builder thing.
 - [wat](#wat)
   - [why](#why)
   - [how hardcore](#how-hardcore)
+  - [stuff to know](#stuff-to-know)
   - [how awful is xml](#how-awful-is-xml)
 - [i want to use this](#i-want-to-use-this)
   - [i have a string make it be xml](#i-have-a-string-make-it-be-xml)
@@ -19,6 +20,7 @@ A validating xml parser / processor / builder thing.
   - [`opts.dereference`](#optsdereference)
   - [`opts.encoding`](#optsencoding)
   - [`opts.maxExpansionCount` / `opts.maxExpansionSize`](#optsmaxexpansioncount--optsmaxexpansionsize)
+  - [`opts.path`](#optspath)
 - [ast nodes](#ast-nodes)
 
 <!-- /MarkdownTOC -->
@@ -92,13 +94,44 @@ theory it can do the following though:
  - You can also create new documents using the AST node constructors even
    without processing a document.
 
+### stuff to know
+
 There is a caveat about reserialization to XML. XML is, in a sense, a lossy
 format. Once entities have been expanded, especially in a context where
 subsequent manipulation of the AST is permitted, it’s tough to say how one would
 turn them back into references safely. When you made some edit, did it unlink
 the reference, or did it alter the definition of the entity replacement text
 itself? Likewise we do not retain knowledge of which attribute values were
-supplied as defaults and which were not.
+supplied as defaults and which were not, and we do not retain knowledge of the
+pre-normalized linebreaks or pre-normalized attribute value text.
+
+One thing which is not supported is _not_ validating. Well, more specifically,
+it does not support ignoring a doctype declaration and its consequences. You
+actually can do non-validation simply by not having a doctype declaration in a
+document; in such a case, undeclared elements and attributes are inherently
+valid, all being content type "ANY" and attribute type "CDATA" implicitly.
+
+Note that the existence of a doctype declaration immediately makes any element
+or attribute which was not declared an error. Thus a document with the a DTD
+like `<!DOCTYPE foo>` (which is technically grammatically valid) nonetheless
+will fail validation by definition, as the element `foo` is not declared.
+
+In the future I might introduce granular customization of validation behavior
+such that users may enable or disable the application of select constraints. I’m
+not sure yet if this corresponds to important use cases so I have not attempted
+it yet.
+
+Even if that does get introduced, it should be noted that hardcore cannot be
+used to parse HTML. XHTML would be fine, but HTML is not a form of XML. HTML has
+different parsing rules and a different set of possible AST nodes from XML.
+Despite appearances, it’s not just a matter of degrees of ‘strictness’. The
+existence of super XML-looking things like `<!DOCTYPE` in html is just a vestige
+of the language’s heritage and these constructs do not mean the same things,
+follow the same grammar, or have the same effects.
+
+However, MathML and SVG, both of which can appear within HTML documents, do
+follow the XML grammar (and they have DTDs as well). Both are suitable for
+processing with hardcore.
 
 ### how awful is xml
 
@@ -167,16 +200,18 @@ These are the options for both `new Processor(opts)` and `parse(thing, opts)`.
 
 ### `opts.dereference`
 
-This is optional only when you do not have any external entities. Since one of
-the main reasons you might choose to use hardcore is to handle DTDs, you
-probably will want to provision this.
+This is optional only if the document is known to contain no references to
+external entities. Otherwise, it is necessary that you provide it.
 
 The value should be a function like this:
 
 ```
-opts.dereference = (type, { name, publicID, systemID, systemIDEncoded }) => {
+opts.dereference = ({ name, path, pathEncoded, publicID, systemID, type }) => {
   /* ... */
-  return bufferOrStreamOrPromiseThatResolvesToABufferOrStream;
+  return {
+    encoding: optionalEncodingString,
+    entity: stringOrbufferOrStreamOrPromiseThatResolvesToStringOrBufferOrStream
+  };
 };
 ```
 
@@ -184,13 +219,26 @@ The `type` will either be `'DTD'` or `'ENTITY'` (technically both are entities
 in XML parlance, but here we mean the kind declared with `<!ENTITY...`).
 
 Depending on the specific declaration that defined the external reference,
-`publicID` may not be defined. The other members will always be defined, and
-`systemIDEncoded` is just the URI-encoded version of `systemID`, which may be
-more convenient in many cases.
+`publicID` may not be defined. The other members should always be defined.
+
+> Notation declarations are the one kind of external reference that may lack a
+> system ID, but notations are not entities and do not get dereferenced during
+> processing.
+
+Despite the amount of data provided, most likely you will only be interested in
+either `path` or `pathEncoded` (which is just a url-encoded version of the
+former). Before I explain why, first some background:
 
 In practice (and quite confusingly), `systemID` is usually a public http URL
-while `publicID` is one of those weird strings that appears in standards
-specifications a lot but nobody ever actually uses.
+while `publicID` is one of those weird theoretical "-//" strings that appears in
+standards specifications a lot but nobody ever actually uses. So `systemID` is
+the one you want.
+
+But the system ID (i.e., the url) might be relative to the referencing context
+(which might itself be an external entity), so you need to know that context.
+That’s why `path` is provided — it is the resolved path of the ‘requesting
+context’ plus the systemID, and normally that means it will end up being an
+absolute URL.
 
 You may wonder: why not just have hardcore fetch these resources automatically?
 
@@ -208,14 +256,19 @@ cache the responses. So the particular implementation is in your hands.
 I would expect that in the majority of cases you would just do something like
 
 ```
-opts.dereference = (type, { systemID }) => {
-  const filePath = myMapOfEntities[systemID];
-  return fs.createReadStream(filePath);
+opts.dereference = ({ path }) => {
+  const filePath = myMapOfEntities[path];
+  return { entity: fs.createReadStream(filePath) };
 };
 ```
 
 Note that a general or parameter entity is not dereferenced until the first time
 it is actually referenced, and it will only be requested for the first item.
+
+It is permitted to specify encoding here since it can technically vary by file
+and might come from out-of-band info like HTTP headers. By default, if an
+explicit encoding was declared for the document, that will propagate to entity
+expansions.
 
 ### `opts.encoding`
 
@@ -240,6 +293,16 @@ entity expansion attacks. If you want to disable them, you can set them to
 occur during the processing of a single entity; the latter refers to the total
 number of codepoints (not bytes) that may be the replacement text of a single
 entity which is referenced.
+
+### `opts.path`
+
+This optional parameter lets you specify the base URI for a document such that
+external entities with relative URLs as their system IDs can be understood.
+
+I think it is atypical to need to provide this, since more often relative urls
+are used only for entities which are components of an external DTD. References
+to the external DTDs from documents, in contrast, are typically made using
+absolute paths, making the document’s location irrelevant.
 
 ## ast nodes
 
