@@ -175,7 +175,10 @@ export const externalID = function * (initCP, permitPublicAlone) {
     yield * asterisk(pred, publicCPs);
     yield * one(delim);
 
-    publicID = String.fromCodePoint(...publicCPs);
+    publicID = String
+      .fromCodePoint(...publicCPs)
+      .replace(/[\n\r\t ]{2,}/g, ' ')
+      .replace(/(?:^ +| +$)/g, '');
 
     const afterCP = yield;
 

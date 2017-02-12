@@ -35,7 +35,9 @@ export default function * SUBSET(nodes) {
       const cp = yield * oneOf(EXCLAMATION_POINT, QUESTION_MARK);
 
       if (cp === QUESTION_MARK) {
+        yield { signal: 'SUPPRESS_CHAOS' };
         yield * PROC_INST(nodes);
+        yield { signal: 'UNSUPPRESS_CHAOS' };
         markupBoundary()();
         continue;
       }
@@ -52,7 +54,9 @@ export default function * SUBSET(nodes) {
 
       switch (yield * oneOf(...possibleCPs)) {
         case HYPHEN:
+          yield { signal: 'SUPPRESS_CHAOS' };
           yield * COMMENT(nodes);
+          yield { signal: 'UNSUPPRESS_CHAOS' };
           break;
         case BRACKET_LEFT:
           yield * asterisk(isWhitespaceChar);
@@ -62,7 +66,9 @@ export default function * SUBSET(nodes) {
               yield * series(IGNORE_CPS, 2);
               yield * asterisk(isWhitespaceChar);
               yield * one(BRACKET_LEFT);
+              yield { signal: 'SUPPRESS_CHAOS' };
               yield * IGNORE_SECT();
+              yield { signal: 'UNSUPPRESS_CHAOS' };
               break;
             case N_UPPER:
               yield * series(INCLUDE_CPS, 2);

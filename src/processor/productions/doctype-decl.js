@@ -57,12 +57,7 @@ export default function * (document) {
     if (doctype.systemID) {
       yield {
         signal: 'DEREFERENCE_DTD',
-        value: {
-          name:            doctype.name,
-          publicID:        doctype.publicID,
-          systemID:        doctype.systemID,
-          systemIDEncoded: encodeURI(doctype.systemID)
-        }
+        value: doctype
       };
     }
     return;

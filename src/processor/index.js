@@ -1,5 +1,6 @@
-import Decoder            from '../decoder';
-import { Readable }       from 'stream';
+import Decoder      from '../decoder';
+import { Readable } from 'stream';
+import url          from 'url';
 
 import {
   isWhitespaceChar,
@@ -36,15 +37,18 @@ class Processor extends Decoder {
     // system, over HTTP, with caching layer, with host whitelist, etc). Only
     // required for documents that have external references.
     //
-    // (type, { name, publicID, systemID, systemIDEncoded })
-    // => Stream|Buffer|Promise(Stream|Buffer)
+    // ({ name, path, pathEncoded, publicID, systemID, type })
+    // => String|Stream|Buffer|Promise(Stream|String|Buffer)
     //
-    // publicID        : may be undefined
-    // systemID        : may be undefined for entity
-    // systemIDEncoded : url-encoded version of systemID if present
-    // type            : will be either 'ENTITY' or 'DTD'
+    // name        : entity name
+    // path        : qualified version of systemID
+    // pathEncoded : url encoded version of path
+    // publicID    : may be undefined
+    // systemID    : normally a uri — may be relative
+    // type        : will be either 'ENTITY' or 'DTD'
 
     this._dereference = opts.dereference;
+    this.path = opts.path;
 
     // Position tracking
     //
@@ -119,6 +123,7 @@ class Processor extends Decoder {
     let chaosMode = 0;
     let chaosDelim;
     let chaosIter;
+    let chaosSuppressed;
 
     const injectedCPs = [];
 
@@ -149,7 +154,7 @@ class Processor extends Decoder {
       // side-effect of expanding entities which have external sources (the
       // decrement occurs when the expansion completes).
 
-      if (chaosMode) {
+      if (chaosMode && !chaosSuppressed) {
         if (cp === PERCENT_SIGN && !chaosDelim) {
           const possibleChaosIter = PARAMETER_REFERENCE(node, false);
 
@@ -295,6 +300,14 @@ class Processor extends Decoder {
             this.setXMLEncoding(res.value.value, 'declared');
             res = activeIter.next();
             continue;
+          case 'SUPPRESS_CHAOS':
+            chaosSuppressed = true;
+            res = activeIter.next();
+            continue;
+          case 'UNSUPPRESS_CHAOS':
+            chaosSuppressed = false;
+            res = activeIter.next();
+            continue;
         }
       }
     }
@@ -420,31 +433,47 @@ class Processor extends Decoder {
   dereference(target, type, entityData, document) {
     this.haltAndCatchFire();
 
+    const path = this.relativeSystemIDFor(entityData.systemID);
+
     const data = {
-      name:            entityData.name,
-      publicID:        entityData.publicID,
-      systemID:        entityData.systemID,
-      systemIDEncoded: entityData.systemID && encodeURI(entityData.systemID)
+      name:        entityData.name,
+      path,
+      pathEncoded: path && encodeURI(path),
+      publicID:    entityData.publicID,
+      systemID:    entityData.systemID,
+      type
     };
 
     const promise = Promise
-      .resolve(this._dereference(type, data))
-      .then(bufferOrStream => new Promise((resolve, reject) => {
-        const opts      = Object.assign({}, this._opts, { target });
+      .resolve(this._dereference(data))
+      .then(({ encoding, entity }) => new Promise((resolve, reject) => {
+        const opts = Object.assign({}, this._opts, { path, target });
+
+        if (encoding) {
+          opts.encoding = encoding;
+        }
+
         const processor = new Processor(opts, document);
 
-        processor.on('error', reject);
-        processor.on('ast', resolve);
+        processor.expansionCount = this.expansionCount;
 
-        if (bufferOrStream instanceof Buffer) {
-          processor.end(bufferOrStream);
-        } else if (bufferOrStream instanceof Readable) {
-          bufferOrStream.pipe(processor);
+        processor.on('error', reject);
+        processor.on('ast', ast => {
+          this.expansionCount = processor.expansionCount;
+          resolve(ast);
+        });
+
+        if (entity instanceof Buffer) {
+          processor.end(entity);
+        } else if (entity instanceof Readable) {
+          entity.pipe(processor);
+        } else if (typeof entity === 'string') {
+          processor.end(new Buffer(entity, encoding));
         } else {
           reject(new Error(
             `Cannot dereference ${ entityData.name } ${ type }: ` +
             `user-supplied dereferencing function returned ` +
-            `${ bufferOrStream }; expected Buffer or Readable stream.`
+            `${ entity }; expected string, Buffer or Readable stream.`
           ));
         }
       }));
@@ -473,6 +502,7 @@ class Processor extends Decoder {
 
     const ticket = {
       active: true,
+      entity,
       increment: () => {
         ticket.length++;
 
@@ -548,5 +578,31 @@ class Processor extends Decoder {
     }).catch(err => this.emit('error', err));
 
     return ticket;
+  }
+
+  // Since system IDs may be relative URLs, and because external entities may
+  // reference other external entities, it is necessary to propagrate the path
+  // if possible.
+  //
+  // TODO: Currently this implementation is almost certainly wrong, even if the
+  // conditions for it to be wrong are obscure. Before I go ahead and modify it
+  // to support what I now believe is most likely the correct behavior, I am
+  // awaiting assistance from the hive mind:
+  //
+  // http://stackoverflow.com/questions/42185078
+
+  relativeSystemIDFor(systemID) {
+    if (!systemID) {
+      return;
+    }
+
+    const path = this.path; // May change later... e.g. something like
+    // (this.activeExpansions.find(ticket => ticket.entity.path) || this).path;
+
+    if (!path) {
+      return systemID;
+    }
+
+    return url.parse(path).resolve(systemID);
   }
 }
