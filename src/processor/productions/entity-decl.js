@@ -29,7 +29,7 @@ export default function * (nodes) {
   if (cp === PERCENT_SIGN) {
     opts.type = 'PARAMETER';
     yield * plus(isWhitespaceChar);
-    cp = yield * one(isNameStartChar);
+    cp = yield;
   }
 
   opts.name = yield * accreteName(cp);

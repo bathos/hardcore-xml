@@ -237,6 +237,21 @@ tap.test('ENTITY must be unparsed', test => {
   });
 });
 
+tap.test('ENTITY must be declared', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ENTITY qux "quux">
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo bar ENTITY #REQUIRED>
+    ]>
+
+    <foo bar="corge"/>
+  `).catch(err => {
+    test.match(err.message, 'declared');
+    test.end();
+  });
+});
+
 tap.test('NOTATION attribute behavior', test => {
   parse(`
     <!DOCTYPE foo [
@@ -357,7 +372,10 @@ tap.test('enumerated attribute type behavior', test => {
     <foo bar="qux"/>
   `).then(([ , elem ]) => {
       test.equal(elem.bar, 'qux');
-      test.same(elem.definition.getAttDef('bar').enumeration, new Set([ 'baz', 'qux', 'quux' ]));
+      test.same(
+        elem.definition.getAttDef('bar').enumeration,
+        new Set([ 'baz', 'qux', 'quux' ])
+      );
     })
     .catch(test.error)
     .then(test.end);
@@ -405,6 +423,57 @@ tap.test('default need not match other VCs if never used', test => {
     <foo bar="qux"/>
   `).then(([ , elem ]) => {
       test.equal(elem.bar, 'qux');
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('general entities are not bypassed in attribute defaults', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ENTITY baz "qux">
+      <!ATTLIST foo bar CDATA "&baz;">
+    ]>
+
+    <foo/>
+  `).then(([ [ , entity ], elem ]) => {
+      test.equal(elem.bar, 'qux');
+      test.equal(entity.value.length, 3);
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('general entities are not bypassed in attribute defaults', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ENTITY baz "qux">
+      <!ATTLIST foo bar CDATA "&baz;">
+    ]>
+
+    <foo/>
+  `).then(([ [ , entity ], elem ]) => {
+      test.equal(elem.bar, 'qux');
+      test.equal(entity.value.length, 3);
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('attribute values always treat expanded delimiters as cdata', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ENTITY qux "'">
+      <!ENTITY baz "&qux;">
+      <!ATTLIST foo bar CDATA #IMPLIED>
+    ]>
+
+    <foo bar='&baz;'/>
+  `).then(([ , elem ]) => {
+      test.equal(elem.bar, '\'');
     })
     .catch(test.error)
     .then(test.end);

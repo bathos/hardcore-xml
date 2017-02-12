@@ -47,8 +47,8 @@ export default function * (elem, elemDecl) {
         return;
       }
 
-      if (elemDecl && elemDecl.type === 'EMPTY') {
-        yield `no content in EMPTY-type element ${ elem.name }`;
+      if (elemDecl && elemDecl.contentSpec === 'EMPTY') {
+        yield `no content in EMPTY element ${ elem.name }`;
       }
 
       if (cp === EXCLAMATION_POINT) {
@@ -85,7 +85,7 @@ export default function * (elem, elemDecl) {
             break;
           }
 
-          cdataCPs.push(cp);
+          cdataCPs.push(BRACKET_RIGHT, BRACKET_RIGHT, cp);
         }
 
         markupBoundary()();
@@ -122,12 +122,16 @@ export default function * (elem, elemDecl) {
       continue;
     }
 
+    if (elemDecl && elemDecl.contentSpec === 'EMPTY') {
+      yield `no content in EMPTY element ${ elem.name }`;
+    }
+
     if (cp === AMPERSAND) {
       const res = yield * GENERAL_REFERENCE(elem);
 
       if (typeof res === 'number') {
         if (elemDecl && !elemDecl.allowsCDATA) {
-          yield `no CDATA content in element ${ elem.name }`;
+          yield `no CDATA in element ${ elem.name }`;
         }
 
         cdataCPs.push(res);
@@ -137,7 +141,7 @@ export default function * (elem, elemDecl) {
     }
 
     if (elemDecl && !elemDecl.allowsCDATA) {
-      if (elemDecl.contentSpec !== 'EMPTY' && isWhitespaceChar(cp)) {
+      if (isWhitespaceChar(cp)) {
         continue;
       }
 

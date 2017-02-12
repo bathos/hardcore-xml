@@ -120,14 +120,6 @@ export default function * (delim, key, attdef, nodes) {
     }
 
     if (inMarkup) {
-      if (attdef.type === 'NOTATION') {
-        const notation = nodes.doctype.getNotation(normalizedValue);
-
-        if (!notation) {
-          yield `notation ${ normalizedValue } to have been declared`;
-        }
-      }
-
       if (attdef.type.startsWith('ENTIT')) {
         const entities = normalizedValue
           .split(/ /g)
