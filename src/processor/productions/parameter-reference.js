@@ -10,7 +10,7 @@ export default function * (nodes, inEntityValue) {
 
   referenceBoundary()();
 
-  const entity = nodes.getEntity(name);
+  const entity = nodes.doctype.getEntity(name);
 
   if (!entity) {
     yield `parameter entity "${ name }" to have been defined`;

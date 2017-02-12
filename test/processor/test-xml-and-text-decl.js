@@ -130,3 +130,36 @@ tap.test('text declaration is recognized in external entity', test => {
     .catch(test.error)
     .then(test.end);
 });
+
+tap.test('external entity initial PI vs text decl', test => {
+  parseHalp({
+    input:`
+      <!DOCTYPE foo [
+        <!ELEMENT foo EMPTY>
+        <!ENTITY % bar SYSTEM "bar">
+        %bar;
+      ]>
+
+      <foo/>
+    `,
+    bar:`<?xmlpoops?>`
+  }).then(([ [ , , pi ] ]) => {
+      test.equal(pi.target, 'xmlpoops');
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
+tap.test('external dtd initial PI vs text decl', test => {
+  parseHalp({
+    input:`
+      <!DOCTYPE foo SYSTEM 'foo'>
+      <foo/>
+    `,
+    foo:`<?doggo puppers?><!ELEMENT foo EMPTY>`
+  }).then(([ { external: [ pi ] } ]) => {
+      test.equal(pi.target, 'doggo');
+    })
+    .catch(test.error)
+    .then(test.end);
+});

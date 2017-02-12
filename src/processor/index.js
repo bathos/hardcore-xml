@@ -159,18 +159,19 @@ class Processor extends Decoder {
           const possibleChaosIter = PARAMETER_REFERENCE(node, false);
 
           possibleChaosIter.next();
+          possibleChaosIter.next(this.boundary());
 
-          const innerCP = yield;
+          const innerCP = injectedCPs.shift() || (yield);
 
           // Special case: '%' may appear as part of one non-literal value: the
           // symbol in parameter entity declarations themselves. Therefore we
           // need to use the following CP to disambiguate.
 
-          if (!isWhitespaceChar(innerCP)) {
+          if (isWhitespaceChar(innerCP)) {
+            injectedCPs.unshift(innerCP);
+          } else {
             chaosIter = possibleChaosIter;
             cp = innerCP;
-          } else {
-            injectedCPs.unshift(innerCP);
           }
         }
 
