@@ -437,7 +437,10 @@ class Processor extends Decoder {
   dereference(target, type, entityData, document) {
     this.haltAndCatchFire();
 
-    const path = this.relativeSystemIDFor(entityData.path || entityData.systemID);
+    const path = this.relativeSystemIDFor(
+      entityData.path ||
+      entityData.systemID
+    );
 
     const data = {
       name:        entityData.name,
