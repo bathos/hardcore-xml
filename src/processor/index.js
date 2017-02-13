@@ -608,11 +608,6 @@ class Processor extends Decoder {
   // reference other external entities, it is necessary to propagrate the path
   // if possible.
   //
-  // TODO: Currently this implementation is almost certainly wrong, even if the
-  // conditions for it to be wrong are obscure. Before I go ahead and modify it
-  // to support what I now believe is most likely the correct behavior, I am
-  // awaiting assistance from the hive mind:
-  //
   // http://stackoverflow.com/questions/42185078
 
   relativeSystemIDFor(systemID) {

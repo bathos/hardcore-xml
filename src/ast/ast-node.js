@@ -7,44 +7,76 @@ class ASTNode extends Array {
   constructor() {
     super();
 
+    const nonArray       = !this.constructor.isArrayNode;
     const nonArrayShadow = {};
+    const childKeys      = this.constructor.childKeys();
+
+    const compact = () => {
+      while (this.includes(undefined)) {
+        this.splice(this.findIndex(member => member === undefined), 1);
+      }
+    };
+
+    const isChildKey = key =>
+      (!nonArray && isArrayIndex(key)) || childKeys.has(key);
 
     const proxy = new Proxy(this, {
+      deleteProperty: (target, key) => {
+        if (isChildKey(key)) {
+          CHILD_PARENT_MAPPING.delete(target[key]);
+        }
+
+        Reflect.deleteProperty(target, key);
+        compact();
+        return true;
+      },
+
       get: (target, key, receiver) => {
-        if (isArrayIndex(key) && !this.constructor.isArrayNode) {
+        if (nonArray && isArrayIndex(key)) {
           return Reflect.get(nonArrayShadow, key);
         }
 
         return Reflect.get(target, key, receiver);
       },
+
       ownKeys: target => {
         const keys = Reflect.ownKeys(target);
 
-        if (!this.constructor.isArrayIndex) {
+        if (nonArray) {
           return [ ...keys, ...Reflect.ownKeys(nonArrayShadow) ];
         }
 
         return keys;
       },
+
       set: (target, key, value, receiver) => {
         if (receiver[key] === value) {
           return true;
         }
 
-        const isIndex = isArrayIndex(key);
+        if (key === 'length') {
+          if (nonArray || value > target.length) {
+            return true;
+          }
 
-        if (!isIndex && !this.constructor.childKeys().has(key)) {
+          target
+            .slice(value)
+            .forEach(node => CHILD_PARENT_MAPPING.delete(node));
+
           return Reflect.set(target, key, value, receiver);
         }
 
-        if (isIndex && !this.constructor.isArrayNode) {
+        const isIndex = isArrayIndex(key);
+
+        if (!isIndex && !childKeys.has(key)) {
+          return Reflect.set(target, key, value, receiver);
+        }
+
+        if (isIndex && nonArray) {
           Reflect.set(nonArrayShadow, key, value);
         }
 
-        if (receiver[key] instanceof ASTNode) {
-          const formerChild = receiver[key];
-          CHILD_PARENT_MAPPING.delete(formerChild);
-        }
+        CHILD_PARENT_MAPPING.delete(receiver[key]);
 
         if (value instanceof ASTNode) {
           if (CHILD_PARENT_MAPPING.has(value)) {
@@ -53,20 +85,18 @@ class ASTNode extends Array {
             if (parent !== receiver) {
               value.remove();
             } else {
-              parent[key] = undefined;
+              this[key] = undefined;
             }
           }
 
           CHILD_PARENT_MAPPING.set(value, { isIndex, key, parent: receiver });
         }
 
-        const res = Reflect.set(target, key, value, receiver);
+        Reflect.set(target, key, value, receiver);
 
-        while (this.includes(undefined)) {
-          this.splice(this.indexOf(undefined), 1);
-        }
+        compact();
 
-        return res;
+        return true;
       }
     });
 
