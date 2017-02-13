@@ -76,7 +76,7 @@ export const question = function * (pred, acc) {
 // Eats codepoints matching exactly the input series. Index may be provided to
 // begin at a point other than the start.
 
-export const series = function * (expectedCPs, startIndex, acc) {
+export const series = function * (expectedCPs, startIndex) {
   const subset = startIndex
     ? expectedCPs.slice(startIndex)
     : expectedCPs;
@@ -88,7 +88,6 @@ export const series = function * (expectedCPs, startIndex, acc) {
     const cp = yield;
 
     if (cp === expectedCP) {
-      acc && acc.push(cp);
       index++;
       continue;
     }
@@ -106,16 +105,11 @@ export const series = function * (expectedCPs, startIndex, acc) {
 
       // We can be lazy — three Ts in ATTLIST is as high as it goes.
 
-      const ordinal =
-        n === 1 ? 'first' :
-        n === 2 ? 'second' :
-                  'third';
+      const ordinal = [ , 'first', 'second', 'third' ][n];
 
       yield `${ ordinal } ${ exp }`;
     } else {
       yield exp;
     }
   }
-
-  return acc;
 };

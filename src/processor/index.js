@@ -330,6 +330,7 @@ class Processor extends Decoder {
       // capturing it here is worth the loss of clarity in the error message for
       // the sake of being able to say ‘all codepoints are truthy’.
       this.expected(cp, 'a valid XML character, not the NUL character');
+      return;
     }
 
     this.eat(cp);
@@ -411,16 +412,16 @@ class Processor extends Decoder {
           return;
         }
 
-        if (initialContext && initialContext.active) {
+        if (terminalContext) {
           this.expected(undefined,
-            `that, when dereferencing the ‘${ initialContext.name }’ ` +
+            `that, when dereferencing the ‘${ terminalContext.name }’ ` +
             `entity, it would not violate hierarchical boundaries — a ` +
             `single entity must not terminate any markup structures which ` +
             `it did not begin`
           );
         } else {
           this.expected(undefined,
-            `that, when dereferencing the ‘${ terminalContext.name }’ ` +
+            `that, when dereferencing the ‘${ initialContext.name }’ ` +
             `entity, it would not violate hierarchical boundaries — a ` +
             `single entity must terminate any markup structures which it ` +
             `began`
@@ -451,8 +452,16 @@ class Processor extends Decoder {
       type
     };
 
+    let res;
+
+    try {
+      res = this._dereference(data);
+    } catch (err) {
+      res = Promise.reject(err);
+    }
+
     const promise = Promise
-      .resolve(this._dereference(data))
+      .resolve(res)
       .then(({ encoding, entity }) => new Promise((resolve, reject) => {
         const opts = Object.assign({}, this._opts, { path, target });
 
@@ -517,11 +526,14 @@ class Processor extends Decoder {
             `Entity ${ entity.name } not to expand to larger than the ` +
             `maximum permitted size, ${ this.maxExpansionSize }`
           );
+
+          return true;
         }
 
         ancestors.forEach(ticket => ticket.increment());
       },
-      length: 0,
+      length: pad ? -2 : 0,
+      name: entity.name,
       path: entity.path
     };
 
@@ -533,7 +545,7 @@ class Processor extends Decoder {
       if (this.expansionCount > this.maxExpansionCount) {
         this.expected(undefined,
           `not to surpass the maximum number of permitted expansions, ` +
-          `${ this.maxExpansionCount }`
+          `${ this.maxExpansionCount } (at ${ name })`
         );
       }
 
@@ -547,6 +559,8 @@ class Processor extends Decoder {
           `entity ${ name } not to include a recursive reference to itself ` +
           `(${ chain } => ${ name })`
         );
+
+        return;
       }
 
       this.activeExpansions.unshift(ticket);
@@ -566,7 +580,10 @@ class Processor extends Decoder {
         // Note: Cannot be for loop due to satanic automatic iterator closing.
 
         while (cp = iter.next().value) {
-          ticket.increment();
+          if (ticket.increment()) {
+            return;
+          };
+
           this.eat(cp);
 
           if (this.__expansionPromise !== promise) {
@@ -582,7 +599,7 @@ class Processor extends Decoder {
       };
 
       expand();
-    }).catch(err => this.emit('error', err));
+    });
 
     return ticket;
   }
@@ -599,10 +616,6 @@ class Processor extends Decoder {
   // http://stackoverflow.com/questions/42185078
 
   relativeSystemIDFor(systemID) {
-    if (!systemID) {
-      return;
-    }
-
     const path = (
       this.activeExpansions.find(ticket => ticket.path) ||
       this

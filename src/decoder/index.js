@@ -339,7 +339,7 @@ class Decoder extends Writable {
 
       let cp;
 
-      while (cp = codepoints.next().value) {
+      while ((cp = codepoints.next().value) !== undefined) {
         this.codepoint(cp);
 
         // If we get halted ... wait to continue! This way the parser can truly

@@ -272,7 +272,7 @@ tap.test('General entity may be externally defined', test => {
       <!DOCTYPE foo [
         <!ELEMENT foo (bar)>
         <!ELEMENT bar (#PCDATA)*>
-        <!ENTITY baz SYSTEM "baz" >
+        <!ENTITY baz PUBLIC 'biz' 'baz' >
       ]>
       <foo>&baz;</foo>
     `,
@@ -339,4 +339,82 @@ tap.test('Relative system ID', test => {
     })
     .catch(test.error)
     .then(test.end);
+});
+
+tap.test('Malformed external ID (no space)', test => {
+  parseHalp({
+    input: `
+      <!DOCTYPE foo PUBLIC "foo""bar">
+      <foo/>
+    `,
+    bar: `
+      <!ELEMENT foo EMPTY>
+    `
+  }).catch(err => {
+    test.match(err.message, 'whitespace');
+    test.end();
+  });
+});
+
+tap.test('Malformed external ID (random poop)', test => {
+  parseHalp({
+    input: `
+      <!DOCTYPE foo PUBLIC "foo" bar>
+      <foo/>
+    `,
+    bar: `
+      <!ELEMENT foo EMPTY>
+    `
+  }).catch(err => {
+    test.match(err.message, 'system');
+    test.end();
+  });
+});
+
+tap.test('Malformed external DTD', test => {
+  parseHalp({
+    input: `
+      <!DOCTYPE foo SYSTEM "foo">
+      <foo/>
+    `,
+    foo: `
+      <!ELEMENT foo EMPTY>
+      derping
+    `
+  }).catch(err => {
+    test.match(err.message, 'EOF');
+    test.end();
+  });
+});
+
+tap.test('Boundary violation type A', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo ANY>
+      <!ENTITY bar "xxx&#x3C;">
+    ]>
+    <foo>&bar;!--x--></foo>
+  `).catch(err => {
+    test.match(
+      err.message,
+      'must terminate any markup structures which it began'
+    );
+    test.end();
+  });
+});
+
+tap.test('Boundary violation type B', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo ANY>
+      <!ENTITY bar "xxx&#x3C;">
+    ]>
+    <foo>&bar;/foo>
+  `).catch(err => {
+    test.match(
+      err.message,
+      'must not terminate any markup structures which it did not begin'
+    );
+    test.end();
+  });
 });

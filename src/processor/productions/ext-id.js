@@ -56,7 +56,6 @@ export default function * (initCP, permitPublicAlone) {
       return { publicID };
     } else {
       yield '""" or "\'" beginning systemID literal';
-      return;
     }
   } else {
     yield * series(SYSTEM_CPS, 1);

@@ -308,3 +308,17 @@ tap.test('declared element with undeclared attribute', test => {
     test.end();
   });
 });
+
+tap.test('malformed ATTLIST (test series driver)', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLISZT foo bar CDATA #IMPLIED>
+    ]>
+
+    <foo bar="baz"/>
+  `).catch(err => {
+    test.match(err.message, 'third "T"');
+    test.end();
+  });
+});

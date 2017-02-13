@@ -337,6 +337,23 @@ tap.test('multiple NOTATION attributes per element are invalid', test => {
   });
 });
 
+tap.test('Notation declaration may have no system ID', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!NOTATION bar PUBLIC "bar">
+      <!NOTATION baz PUBLIC "baz" >
+      <!ELEMENT foo EMPTY>
+    ]>
+
+    <foo/>
+  `).then(([ [ notation ] ]) => {
+      test.equal(notation.publicID, 'bar');
+      test.equal(notation.systemID, undefined);
+    })
+    .catch(test.error)
+    .then(test.end);
+});
+
 tap.test('NMTOKEN & NMTOKENS attribute behavior & normalization', test => {
   parse(`
     <!DOCTYPE foo [
