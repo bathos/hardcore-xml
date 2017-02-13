@@ -582,7 +582,7 @@ class Processor extends Decoder {
         while (cp = iter.next().value) {
           if (ticket.increment()) {
             return;
-          };
+          }
 
           this.eat(cp);
 
