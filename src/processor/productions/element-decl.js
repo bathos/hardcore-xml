@@ -1,9 +1,10 @@
 import ContentSpec        from '../../ast/nodes/declaration-content-spec';
 import ElementDeclaration from '../../ast/nodes/declaration-element';
 
-import { accreteName, asterisk, one, oneOf, plus, series } from '../drivers';
+import { asterisk, one, oneOf, plus, series } from '../drivers';
 
 import CONTENT_SPEC from './content-spec';
+import NAME from './name';
 
 import {
   isNameStartChar, isWhitespaceChar,
@@ -18,7 +19,7 @@ export default function * (nodes) {
   yield * series(ELEMENT_CPS, 2);
   yield * plus(isWhitespaceChar);
 
-  const name = yield * accreteName();
+  const name = yield * NAME();
 
   if (nodes.doctype.getElement(name)) {
     yield `element ${ name } to be declared only once`;
@@ -61,7 +62,7 @@ export default function * (nodes) {
 
         yield * asterisk(isWhitespaceChar);
 
-        const name = yield * accreteName();
+        const name = yield * NAME();
 
         if (elemDecl.contentSpec.some(cs => cs.name === name)) {
           yield `element ${ name } not to appear twice in choice content spec`;

@@ -1,10 +1,11 @@
 import Document from '../../ast/nodes/document';
 
-import { accreteName, asterisk } from '../drivers';
+import { asterisk } from '../drivers';
 
 import COMMENT      from './comment';
 import DOCTYPE_DECL from './doctype-decl';
 import ELEMENT      from './element';
+import NAME         from './name';
 import PROC_INST    from './proc-inst';
 import XML_DECL     from './xml-decl';
 
@@ -41,7 +42,7 @@ export default function * () {
 
       if (cp === QUESTION_MARK) {
         if (xmlDeclPossible) {
-          const name = yield * accreteName();
+          const name = yield * NAME();
 
           xmlDeclPossible = false;
 
@@ -82,7 +83,7 @@ export default function * () {
       if (isNameStartChar(cp) && !document.root) {
         xmlDeclPossible = false;
 
-        const name = yield * accreteName(cp);
+        const name = yield * NAME(cp);
 
         if (document.doctype && document.doctype.name !== name) {
           yield `root element to be named ${ document.doctype.name }`;

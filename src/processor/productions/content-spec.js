@@ -1,6 +1,8 @@
 import ContentSpec from '../../ast/nodes/declaration-content-spec';
 
-import { accreteName, asterisk, oneOf } from '../drivers';
+import { asterisk, oneOf } from '../drivers';
+
+import NAME from './name';
 
 import {
   isNameStartChar, isWhitespaceChar,
@@ -48,7 +50,7 @@ export default function * CONTENT_SPEC(cp) {
     }
   } else {
     contentSpec.type = 'ELEMENT';
-    contentSpec.name = yield * accreteName(cp);
+    contentSpec.name = yield * NAME(cp);
   }
 
   const lastCP = yield;

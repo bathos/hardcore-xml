@@ -1,12 +1,11 @@
-import {
-  accreteName, asterisk, one, oneOf, series
-} from '../drivers';
+import { asterisk, one, oneOf, series } from '../drivers';
 
 import ATTLIST_DECL        from './attlist-decl';
 import COMMENT             from './comment';
 import ELEMENT_DECL        from './element-decl';
 import ENTITY_DECL         from './entity-decl';
 import IGNORE_SECT         from './ignore-sect';
+import NAME                from './name';
 import NOTATION_DECL       from './notation-decl';
 import PARAMETER_REFERENCE from './parameter-reference';
 import PROC_INST           from './proc-inst';
@@ -46,7 +45,7 @@ export default function * SUBSET(nodes, extStart) {
 
         if (textDeclPossible) {
           textDeclPossible = false;
-          name = yield * accreteName();
+          name = yield * NAME();
 
           if (name === 'xml') {
             yield * XML_DECL(undefined, true);

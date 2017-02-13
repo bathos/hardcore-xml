@@ -17,11 +17,14 @@ const TYPES = new Set([ 'GENERAL', 'PARAMETER', 'UNPARSED' ]);
 
 export default
 class EntityDeclaration extends ASTNode {
-  constructor({ name, notationName, publicID, systemID, type, value }={}) {
+  constructor(opts={}) {
+    const { name, notationName, path, publicID, systemID, type, value } = opts;
+
     super();
 
     this.name         = name;
     this.notationName = notationName;
+    this.path         = path;
     this.publicID     = publicID;
     this.systemID     = systemID;
     this.type         = type;

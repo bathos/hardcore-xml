@@ -298,3 +298,45 @@ tap.test('Unparsed entity notation must have been declared', test => {
     test.end();
   });
 });
+
+tap.test('Unparsed entity notation must have been declared', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ENTITY bar SYSTEM "bar" NDATA baz>
+    ]>
+    <foo/>
+  `).catch(err => {
+    test.match(err.message, 'baz');
+    test.end();
+  });
+});
+
+tap.test('Relative system ID', test => {
+  parseHalp({
+    'input': `
+      <!DOCTYPE foo SYSTEM "http://dotcom.xml/foo.dtd">
+      <foo/>
+    `,
+    'http://dotcom.xml/foo.dtd': `
+      <!ENTITY % bar SYSTEM "bar/bar.ent">
+      %bar;
+    `,
+    'http://dotcom.xml/bar/bar.ent': `
+      <!ENTITY % baz SYSTEM "baz/baz.ent">
+      %baz;
+      %qux;
+      %quux;
+    `,
+    'http://dotcom.xml/bar/baz/baz.ent': `
+      <!ENTITY % qux '&#x3C;!ENTITY % quux SYSTEM "quux.ent">'>
+    `,
+    'http://dotcom.xml/bar/quux.ent': `
+      <!ELEMENT foo EMPTY>
+    `
+  }).then(([ doctype ]) => {
+      test.equal(doctype.external.length, 5);
+    })
+    .catch(test.error)
+    .then(test.end);
+});

@@ -1,10 +1,10 @@
 import EntityDeclaration from '../../ast/nodes/declaration-entity';
 
-import {
-  accreteName, asterisk, externalID, one, oneOf, plus, series
-} from '../drivers';
+import { asterisk, one, oneOf, plus, series } from '../drivers';
 
+import EXT_ID              from './ext-id';
 import GENERAL_REFERENCE   from './general-reference';
+import NAME                from './name';
 import PARAMETER_REFERENCE from './parameter-reference';
 
 import {
@@ -32,7 +32,7 @@ export default function * (nodes) {
     cp = yield;
   }
 
-  opts.name = yield * accreteName(cp);
+  opts.name = yield * NAME(cp);
 
   yield * plus(isWhitespaceChar);
 
@@ -66,8 +66,16 @@ export default function * (nodes) {
       }
 
       if (cp === PERCENT_SIGN) {
-        const newExpansionTicket = yield * PARAMETER_REFERENCE(nodes, true);
-        expansionTicket = expansionTicket || newExpansionTicket;
+        const cp = yield;
+        yield cp;
+
+        if (isWhitespaceChar(cp)) {
+          value.push(PERCENT_SIGN);
+        } else {
+          const newExpansionTicket = yield * PARAMETER_REFERENCE(nodes, true);
+          expansionTicket = expansionTicket || newExpansionTicket;
+        }
+
         continue;
       }
 
@@ -76,7 +84,9 @@ export default function * (nodes) {
 
     opts.value = value;
   } else {
-    Object.assign(opts, yield * externalID(cp));
+    Object.assign(opts, yield * EXT_ID(cp));
+
+    opts.path = yield { signal: 'GET_PATH', value: opts.systemID };
 
     if (opts.type === 'GENERAL') {
       const wsCPs = yield * asterisk(isWhitespaceChar, []);
@@ -88,7 +98,7 @@ export default function * (nodes) {
           yield * series(NDATA_CPS, 1);
           yield * plus(isWhitespaceChar);
 
-          opts.notationName = yield * accreteName();
+          opts.notationName = yield * NAME();
           opts.type = 'UNPARSED';
 
           if (!nodes.doctype.getNotation(opts.notationName)) {

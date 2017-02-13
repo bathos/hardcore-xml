@@ -1,9 +1,11 @@
 import Element from '../../ast/nodes/element';
 
-import { accreteName, asterisk, equals, one, oneOf, series } from '../drivers';
+import { asterisk, one, oneOf, series } from '../drivers';
 
 import ATT_VALUE from './att-value';
 import CONTENT   from './content';
+import EQUALS    from './equals';
+import NAME      from './name';
 
 import {
   isNameStartChar, isWhitespaceChar,
@@ -30,7 +32,7 @@ export default function * (nodes, name) {
       cp = yield * oneOf(GREATER_THAN, SLASH, isNameStartChar);
 
       if (isNameStartChar(cp)) {
-        const key = yield * accreteName(cp);
+        const key = yield * NAME(cp);
 
         const attdef = decl && decl.getAttDef(key);
 
@@ -42,7 +44,7 @@ export default function * (nodes, name) {
           yield `not to see attribute ${ key } repeated`;
         }
 
-        yield * equals();
+        yield * EQUALS();
 
         const delim = yield * oneOf(QUOTE_DBL, QUOTE_SNG);
         const value = yield * ATT_VALUE(delim, key, attdef, nodes);

@@ -1,17 +1,18 @@
 import ProcessingInstruction from '../../ast/nodes/processing-instruction';
 import { notXML } from '../../ast/ast-util';
-import { accreteName, asterisk, one } from '../drivers';
+import { asterisk, one } from '../drivers';
+
+import NAME from './name';
 
 import {
   isProcInstValueChar,
   isWhitespaceChar,
 
   GREATER_THAN, QUESTION_MARK
-
 } from '../../data/codepoints';
 
 export default function * (nodes, providedName) {
-  const name = providedName || (yield * accreteName());
+  const name = providedName || (yield * NAME());
 
   if (!notXML(name)) {
     yield 'processing instruction target not to be "xml" (case insensitive)';

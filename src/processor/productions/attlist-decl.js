@@ -1,9 +1,10 @@
 import AttdefDeclaration  from '../../ast/nodes/declaration-attdef';
 import AttlistDeclaration from '../../ast/nodes/declaration-attlist';
 
-import { accreteName, asterisk, one, oneOf, plus, series } from '../drivers';
+import { asterisk, one, oneOf, plus, series } from '../drivers';
 
 import ATT_VALUE from './att-value';
+import NAME from './name';
 
 import {
   isNameContinueChar, isNameStartChar, isWhitespaceChar,
@@ -29,7 +30,7 @@ export default function * (nodes) {
   yield * plus(isWhitespaceChar);
 
   const attlist = new AttlistDeclaration({
-    elementName: yield * accreteName()
+    elementName: yield * NAME()
   });
 
   nodes.push(attlist);
@@ -50,7 +51,7 @@ export default function * (nodes) {
     }
 
     const attdef = new AttdefDeclaration({
-      name: yield * accreteName(cp)
+      name: yield * NAME(cp)
     });
 
     attlist.push(attdef);
@@ -142,7 +143,7 @@ export default function * (nodes) {
             while (true) {
               yield * asterisk(isWhitespaceChar);
 
-              const name = yield * accreteName();
+              const name = yield * NAME();
 
               if (attdef.enumeration.has(name)) {
                 yield `notation ${ name } not to appear twice in attdef enum`;

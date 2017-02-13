@@ -1,6 +1,8 @@
-import { accreteName, one, oneOf, plus } from '../drivers';
+import { one, oneOf, plus } from '../drivers';
 
 import standardEntities from '../../data/entities';
+
+import NAME from './name';
 
 import {
   isDecChar,
@@ -44,7 +46,7 @@ export default function * (node, postHash) {
     return resolvedCP;
   }
 
-  const entityName = yield * accreteName(cp);
+  const entityName = yield * NAME(cp);
 
   yield * one(SEMICOLON);
 

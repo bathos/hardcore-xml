@@ -1,10 +1,11 @@
 import CDATA from '../../ast/nodes/cdata';
 
-import { accreteName, asterisk, one, oneOf, plus, series } from '../drivers';
+import { asterisk, one, oneOf, plus, series } from '../drivers';
 
 import COMMENT           from './comment';
 import GENERAL_REFERENCE from './general-reference';
 import ELEMENT           from './element';
+import NAME              from './name';
 import PROC_INST         from './proc-inst';
 
 import {
@@ -106,7 +107,7 @@ export default function * (elem, elemDecl) {
         continue;
       }
 
-      const name = yield * accreteName(cp);
+      const name = yield * NAME(cp);
 
       if (elemDecl && !elemDecl.matchesContent(elem, name)) {
         yield (

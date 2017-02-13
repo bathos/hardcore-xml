@@ -1,16 +1,10 @@
 import Doctype from '../../ast/nodes/doctype';
 
-import SUBSET from './subset';
+import { asterisk, one, oneOf, plus, series } from '../drivers';
 
-import {
-  accreteName,
-  asterisk,
-  externalID,
-  one,
-  oneOf,
-  plus,
-  series
-} from '../drivers';
+import EXT_ID from './ext-id';
+import NAME   from './name';
+import SUBSET from './subset';
 
 import {
   isWhitespaceChar,
@@ -24,7 +18,7 @@ export default function * (document) {
   yield * series(DOCTYPE_CPS, 3);
   yield * plus(isWhitespaceChar);
 
-  const name    = yield * accreteName();
+  const name    = yield * NAME();
   const doctype = new Doctype({ name });
   const wsCPs   = [];
 
@@ -37,7 +31,7 @@ export default function * (document) {
   let cp = yield * oneOf(...nextCPs);
 
   if (cp === P_UPPER || cp === S_UPPER) {
-    const { publicID, systemID } = yield * externalID(cp, false);
+    const { publicID, systemID } = yield * EXT_ID(cp, false);
     doctype.publicID = publicID;
     doctype.systemID = systemID;
     yield * asterisk(isWhitespaceChar);

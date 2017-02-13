@@ -297,6 +297,9 @@ class Processor extends Decoder {
           case 'EXPANSION_BOUNDARY':
             res = activeIter.next(this.boundary());
             continue;
+          case 'GET_PATH':
+            res = activeIter.next(this.relativeSystemIDFor(res.value.value));
+            continue;
           case 'SET_ENCODING':
             this.setXMLEncoding(res.value.value, 'declared');
             res = activeIter.next();
@@ -434,7 +437,7 @@ class Processor extends Decoder {
   dereference(target, type, entityData, document) {
     this.haltAndCatchFire();
 
-    const path = this.relativeSystemIDFor(entityData.systemID);
+    const path = this.relativeSystemIDFor(entityData.path || entityData.systemID);
 
     const data = {
       name:        entityData.name,
@@ -503,7 +506,6 @@ class Processor extends Decoder {
 
     const ticket = {
       active: true,
-      entity,
       increment: () => {
         ticket.length++;
 
@@ -516,7 +518,8 @@ class Processor extends Decoder {
 
         ancestors.forEach(ticket => ticket.increment());
       },
-      length: 0
+      length: 0,
+      path: entity.path
     };
 
     const promise = this.__expansionPromise = new Promise(resolve => {
@@ -597,8 +600,10 @@ class Processor extends Decoder {
       return;
     }
 
-    const path = this.path; // May change later... e.g. something like
-    // (this.activeExpansions.find(ticket => ticket.entity.path) || this).path;
+    const path = (
+      this.activeExpansions.find(ticket => ticket.path) ||
+      this
+    ).path;
 
     if (!path) {
       return systemID;

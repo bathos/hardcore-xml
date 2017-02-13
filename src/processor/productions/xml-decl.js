@@ -1,4 +1,6 @@
-import { asterisk, equals, one, oneOf, plus, series } from '../drivers';
+import { asterisk, one, oneOf, plus, series } from '../drivers';
+
+import EQUALS from './equals';
 
 import {
   isDecChar,
@@ -10,7 +12,6 @@ import {
   QUOTE_SNG, S_LOWER, V_LOWER, Y_LOWER,
 
   ENCODING_CPS, NO_CPS, STANDALONE_CPS, VERSION_CPS, YES_CPS
-
 } from '../../data/codepoints';
 
 export default function * (document, isTextDecl) {
@@ -22,7 +23,7 @@ export default function * (document, isTextDecl) {
 
   if (cp === V_LOWER) {
     yield * series(VERSION_CPS, 1);
-    yield * equals();
+    yield * EQUALS();
 
     const delim = yield * oneOf(QUOTE_DBL, QUOTE_SNG);
 
@@ -50,7 +51,7 @@ export default function * (document, isTextDecl) {
 
   if (cp === E_LOWER) {
     yield * series(ENCODING_CPS, 1);
-    yield * equals();
+    yield * EQUALS();
 
     const delim = yield * oneOf(QUOTE_DBL, QUOTE_SNG);
 
@@ -79,7 +80,7 @@ export default function * (document, isTextDecl) {
 
   if (!isTextDecl && cp === S_LOWER) {
     yield * series(STANDALONE_CPS, 1);
-    yield * equals();
+    yield * EQUALS();
 
     const delim = yield * oneOf(QUOTE_DBL, QUOTE_SNG);
     const sddCP = yield * oneOf(N_LOWER, Y_LOWER);

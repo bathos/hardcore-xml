@@ -1,10 +1,13 @@
-import { accreteName, one } from '../drivers';
+import { one } from '../drivers';
+
+import NAME from './name';
+
 import { SEMICOLON } from '../../data/codepoints';
 
 export default function * (nodes, inEntityValue) {
   const referenceBoundary = yield { signal: 'EXPANSION_BOUNDARY' };
 
-  const name = yield * accreteName();
+  const name = yield * NAME();
 
   yield * one(SEMICOLON);
 
