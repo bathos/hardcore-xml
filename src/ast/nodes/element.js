@@ -6,7 +6,14 @@ import ProcessingInstruction from './processing-instruction';
 import text                  from '../text';
 
 import {
-  isArrayIndex, isName, isNmtoken, isString, isXMLString
+  compareAlpha,
+  indent,
+  isArrayIndex,
+  isName,
+  isNmtoken,
+  isString,
+  isXMLString,
+  quote
 } from '../ast-util';
 
 export default
@@ -108,10 +115,6 @@ class Element extends ASTNode {
         return;
       }
     }
-  }
-
-  get isContent() {
-    return true;
   }
 
   get notation() {
@@ -243,19 +246,135 @@ class Element extends ASTNode {
     }
   }
 
+  _serialize(opts) {
+    // This is the most complex serialization method, mostly because we’ve made
+    // it quite customizable, but also because element declarations may
+    // influence change the semantics of interior whitespace.
+
+    const prefix =
+      `${ indent(opts) }<${ this.name }`;
+
+    const isEmpty =
+      (this.definition || {}).contentSpec === 'EMPTY';
+
+    const hasCDATA =
+      (this.definition || {}).mixed ||
+      this.some(node => node instanceof CDATA);
+
+    const attrs =
+      [ ...this.allAttributes() ];
+
+    const unrendered = [
+      !opts.comments && Comment,
+      !opts.pis      && ProcessingInstruction
+    ].filter(Boolean);
+
+    const childOpts = Object.assign(Object.create(opts), {
+      depth: opts.depth + 1
+    });
+
+    // Note that when the element is mixed but we’re not formatting CDATA
+    // (either due to user option or the xml:space attribute), the effect
+    // prevents positional formatting of element children as well, since adding
+    // indentation or linebreaks would represent alteration of CDATA content.
+
+    switch (this.getAttribute('xml:space')) {
+      case 'default':
+        childOpts.formatCDATA = opts._formatCDATA;
+        break;
+      case 'preserve':
+        childOpts.formatCDATA = false;
+        break;
+    }
+
+    let contentJoin = '\n';
+    let terminus = `\n${ indent(opts) }</${ this.name }>`;
+
+    const changeNothing = hasCDATA && !childOpts.formatCDATA;
+
+    if (changeNothing) {
+      opts.depth = 0;
+      contentJoin = '';
+      terminus = `</${ this.name }>`;
+    }
+
+    const content = this
+      .filter(node => unrendered.every(Node => !(node instanceof Node)))
+      .map(node => node._serialize(childOpts))
+      .join(contentJoin);
+
+    // 1st case: no attributes, no contents
+
+    if (!attrs.length && !content) {
+      if (opts.selfClose) {
+        return `${ prefix }/>`;
+      }
+
+      const len = prefix.length + this.name.length + 3;
+
+      if (isEmpty || len <= opts.wrapColumn || changeNothing) {
+        return `${ prefix }></${ this.name }>`;
+      }
+
+      return `${ prefix }>\n${ indent(opts) }</${ this.name }>`;
+    }
+
+    // 2nd case: no attributes; contents
+
+    if (!attrs.length) {
+      `${ prefix }>${ contentJoin }${ content }${ terminus }`;
+    }
+
+    // Attributes in the mix...
+
+    let prefixWithAttrs;
+
+    if (opts.attrSort) {
+      attrs.sort(([ a ], [ b ]) => compareAlpha(a, b));
+    }
+
+    const attrStrs = attrs
+      .map(([ key, value ]) => `${ key }=${ quote(value, opts) }`);
+
+    if (attrStrs.length <= opts.attrInlineMax) {
+      const inlineAttrs = attrStrs.map(attrStr => ` ${ attrStr }`).join('');
+
+      const len =
+        prefix.length +
+        inlineAttrs.length +
+        Boolean(content || !opts.selfClose);
+
+      if (len <= opts.wrapColumn) {
+        prefixWithAttrs = `${ prefix }${ inlineAttrs }`;
+      }
+    }
+
+    if (!prefixWithAttrs) {
+      prefixWithAttrs = prefix + attrStrs
+        .map(attrStr => `\n${ indent(childOpts) }${ attrStr }`)
+        .join('');
+    }
+
+    // 3rd case: attributes and no content
+
+    if (!content) {
+      return opts.selfClose
+        ? `${ prefixWithAttrs }/>`
+        : `${ prefixWithAttrs }>${ terminus }`;
+    }
+
+    // 4th case: attributes and content
+
+    return `${ prefixWithAttrs }>${ contentJoin }${ content }${ terminus }`;
+  }
+
   setAttribute(key, value) {
     this[`$${ key }`] = value;
   }
 
-  serialize() {
-    // TODO — not worth doing till we land on what serialization options will be
-    // since it’s more complex than the other ones.
-  }
-
   toJSON() {
     return Object.assign(super.toJSON(), {
-      attr: this
-        .allAttributes()
+      attr: [ ...this.allAttributes() ]
         .reduce((acc, [ key, value ]) =>
           Object.assign(acc, { [key]: value }),
           {}

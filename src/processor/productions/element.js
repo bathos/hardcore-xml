@@ -68,9 +68,14 @@ export default function * (nodes, name) {
     // actually used.
 
     if (decl) {
-      const allAttdefs = [ ...decl.getAttDefs().values() ];
-      const requiredDefs = allAttdefs.filter(attdef => attdef.required);
-      const defaultDefs = allAttdefs.filter(attdef => attdef.hasDefault);
+      const allAttdefs =
+        [ ...decl.getAttDefs().values() ];
+
+      const requiredDefs =
+        allAttdefs.filter(attdef => attdef.required || attdef.fixed);
+
+      const defaultDefs =
+        allAttdefs.filter(attdef => attdef.hasDefault);
 
       for (const requiredDef of requiredDefs) {
         if (!element.hasAttribute(requiredDef.name)) {

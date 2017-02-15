@@ -226,6 +226,15 @@ class Processor extends Decoder {
             break;
           }
 
+          if (node.validate) {
+            try {
+              node.validate();
+            } catch (err) {
+              this.emit('error', err);
+              return;
+            }
+          }
+
           this.emit('ast', node);
           return;
         }

@@ -1,6 +1,16 @@
 const tap = require('tap');
 const ASTNode = Object.getPrototypeOf(require('../../.').nodes.Document);
 
+class NASTYNode extends ASTNode {
+  static get isArrayNode() {
+    return false;
+  }
+
+  static childKeys() {
+    return new Set([ 'foo' ]);
+  }
+}
+
 tap.test('child transfer: push', test => {
   const a = new ASTNode();
   const b = new ASTNode();
@@ -167,6 +177,65 @@ tap.test('keyed children', test => {
 
   test.equal(c.foo, undefined);
   test.equal(b.parent, undefined);
+
+  test.done();
+});
+
+tap.test('nonarray nodes', test => {
+  const a = new NASTYNode();
+  const b = new NASTYNode();
+  const c = new NASTYNode();
+
+  a.push(b);
+
+  test.equal(a.length, 0);
+  test.equal(a[0], undefined);
+  test.equal(b.parent, undefined);
+
+  a.foo = b;
+
+  test.equal(a.foo, b);
+  test.equal(b.parent, a);
+
+  a[0] = c;
+
+  test.equal(a.length, 0);
+  test.equal(a[0], c);
+  test.equal(c.parent, undefined);
+
+  test.ok('0' in a);
+  test.ok('foo' in a);
+  test.ok(!('1' in a));
+
+  test.done();
+});
+
+tap.test('remove', test => {
+  const a = new ASTNode();
+  const b = new ASTNode();
+  const c = new NASTYNode();
+
+  a.push(b);
+  a.push(c);
+
+  b.remove();
+
+  test.equal(b.parent, undefined);
+  test.equal(a.length, 1);
+  test.equal(a[0], c);
+
+  test.doesNotThrow(() => b.remove());
+
+  c.foo = b;
+
+  test.equal(b.parent, c);
+
+  b.remove();
+
+  test.doesNotThrow(() => b.remove());
+
+  test.equal(b.parent, undefined);
+  test.equal(c.foo, undefined);
 
   test.done();
 });

@@ -9,13 +9,13 @@ import Element               from './element';
 import ProcessingInstruction from './processing-instruction';
 import text                  from '../text';
 
-import { isBoolean, isName, isString } from '../ast-util';
+import { indent, isBoolean, isName, isString } from '../ast-util';
 
 const STRING_CS = new Set([ 'ANY', 'EMPTY' ]);
 
 export default
 class ElementDeclaration extends ASTNode {
-  constructor({ contentSpec, mixed, name }={}) {
+  constructor({ contentSpec='ANY', mixed=false, name }={}) {
     super();
 
     this.name  = name;
@@ -123,13 +123,13 @@ class ElementDeclaration extends ASTNode {
     return this.contentSpec.pattern().test(contentImage);
   }
 
-  serialize() {
-    return `<!ELEMENT ${ this.name } ${
+  _serialize(opts) {
+    return `${ indent(opts) }<!ELEMENT ${ this.name } ${
       this.contentSpec instanceof ContentSpec
-      ? this.mixed
-        ? `(#PCDATA|${ this.contentSpec.serialize().slice(1) }`
-        : this.contentSpec.serialize()
-      : this.contentSpec
+        ? this.mixed
+          ? `(#PCDATA|${ this.contentSpec._serialize().slice(1) }`
+          : this.contentSpec._serialize()
+        : this.contentSpec
     }>`;
   }
 

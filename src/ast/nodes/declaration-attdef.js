@@ -2,7 +2,11 @@ import assert  from 'assert';
 import ASTNode from '../ast-node';
 import text    from '../text';
 
-import { isName, isNmtoken, isSetOf, isString } from '../ast-util';
+import {
+  indent, isName, isNmtoken, isSetOf, isString, quote
+} from '../ast-util';
+
+import padEnd from 'string.prototype.padend'; // Node 7 still lacks w/o flag
 
 const NUM_TYPES = new Set([
   'ENUMERATION', 'NOTATION'
@@ -43,6 +47,19 @@ class AttdefDeclaration extends ASTNode {
 
   static get isArrayNode() {
     return false;
+  }
+
+  get _attTypeCol() {
+    return NUM_TYPES.has(this.type) ? 0 : this.type.length;
+  }
+
+  get _defaultTypeCol() {
+    return (
+      this.fixed        ? 6 :
+      this.required     ? 9 :
+      this.defaultValue ? 0 :
+                          8
+    );
   }
 
   get element() {
@@ -101,7 +118,7 @@ class AttdefDeclaration extends ASTNode {
     }
 
     if (this.type === 'ID') {
-      return this.document.findDeepByID(value) === this;
+      return this.document.filterDeep(node => node.id === value).length === 1;
     }
 
     const values = value.split(/ /g);
@@ -115,6 +132,8 @@ class AttdefDeclaration extends ASTNode {
         .map(value => this.doctype.getEntity(value))
         .every(entity => entity && entity.type === 'UNPARSED');
     }
+
+    return true;
   }
 
   matchesValueGrammatically(value) {
@@ -147,8 +166,56 @@ class AttdefDeclaration extends ASTNode {
     return values.every(isNmtoken);
   }
 
-  serialize() {
-    // TODO: wait on this, it’s complicated if we want to format these sanely
+  _serialize(opts) {
+    const numz =
+      this.enumeration && `(${ [ ...this.enumeration ].join('|') })`;
+
+    const name =
+      this.name;
+
+    const type =
+      this.type === 'NOTATION' ? `NOTATION ${ numz }` : (numz || this.type);
+
+    const defaultType =
+      this.fixed        ? `#FIXED` :
+      this.required     ? `#REQUIRED` :
+      this.defaultValue ? `` :
+                          `#IMPLIED`;
+
+    const defaultValue =
+      this.defaultValue && quote(this.defaultValue, opts);
+
+    if (opts.attdefLone) {
+      const defaultTypeFull = [ defaultType, defaultValue ]
+        .filter(Boolean)
+        .join(' ');
+
+      return `${ indent(opts) }${ name } ${ type } ${ defaultTypeFull }`;
+    }
+
+    const { value } = [ name, type, defaultType ]
+      .reduce((acc, value, index) => {
+        const targetWidth = opts.attdefCols[index];
+
+        if (value.length > targetWidth) {
+          acc.value += ` ${ value }`;
+          acc.offset += targetWidth - value.length;
+        } else {
+          const padWidth = targetWidth - acc.offset;
+          const paddedValue = padEnd(value, padWidth);
+
+          acc.value += ` ${ paddedValue }`;
+          acc.offset = Math.max(0, paddedValue.length - padWidth);
+        }
+
+        return acc;
+      }, { value: '', offset: 0 });
+
+    if (defaultValue) {
+      return `${ indent(opts) }${ value } ${ defaultValue }`;
+    }
+
+    return `${ indent(opts) }${ value.trimRight() }`;
   }
 
   toJSON() {
@@ -192,8 +259,7 @@ class AttdefDeclaration extends ASTNode {
 
     if (type === 'ID') {
       if (element) {
-        const idDef = element
-          .getAttDefs()
+        const [ , idDef ] = [ ...element.getAttDefs() ]
           .find(([ , attdef ]) => attdef.type === 'ID');
 
         assert(idDef === this, text.attDefDupe('ID'));
@@ -205,8 +271,7 @@ class AttdefDeclaration extends ASTNode {
     }
 
     if (type === 'NOTATION' && element) {
-      const notationDef = element
-        .getAttDefs()
+      const [ , notationDef ] = [ ...element.getAttDefs() ]
         .find(([ , attdef ]) => attdef.type === 'NOTATION');
 
       assert(notationDef === this, text.attDefDupe('NOTATION'));

@@ -20,7 +20,21 @@ behaviors shared by all nodes.
   - [`ASTNode.prototype.findDeep\(\)`](#astnodeprototypefinddeep)
   - [`ASTNode.prototype.filterDeep\(\)`](#astnodeprototypefilterdeep)
   - [`ASTNode.prototype.remove\(\)`](#astnodeprototyperemove)
-  - [`ASTNode.prototype.serialize\(\)`](#astnodeprototypeserialize)
+  - [`ASTNode.prototype.serialize\(opts\)`](#astnodeprototypeserializeopts)
+    - [`serializationOpts.attrInlineMax`](#serializationoptsattrinlinemax)
+    - [`serializationOpts.attrSort`](#serializationoptsattrsort)
+    - [`serializationOpts.comments`](#serializationoptscomments)
+    - [`serializationOpts.depth`](#serializationoptsdepth)
+    - [`serializationOpts.dtd`](#serializationoptsdtd)
+    - [`serializationOpts.formatCDATA`](#serializationoptsformatcdata)
+    - [`serializationOpts.formatComment`](#serializationoptsformatcomment)
+    - [`serializationOpts.indent`](#serializationoptsindent)
+    - [`serializationOpts.minWidth`](#serializationoptsminwidth)
+    - [`serializationOpts.pis`](#serializationoptspis)
+    - [`serializationOpts.preferSingle`](#serializationoptsprefersingle)
+    - [`serializationOpts.selfClose`](#serializationoptsselfclose)
+    - [`serializationOpts.wrapColumn`](#serializationoptswrapcolumn)
+    - [`serializationOpts.xmlDecl`](#serializationoptsxmldecl)
   - [`ASTNode.prototype.toJSON\(\)`](#astnodeprototypetojson)
   - [`ASTNode.prototype.validate\(\)`](#astnodeprototypevalidate)
   - [Additional methods from `Array.prototype`](#additional-methods-from-arrayprototype)
@@ -176,19 +190,124 @@ node
   .forEach(node => node.remove());
 ```
 
-### `ASTNode.prototype.serialize()`
+### `ASTNode.prototype.serialize(opts)`
 
 Returns an XML string. This may not be the same as the original source text. In
-addition to normalizing formatting and whitespace, XML is, in some sense, a
-lossy format in that entity references cannot be ‘restored’ (you could pull it
-off with general entities maybe, but parameter entities are especially
-problematic when you have a mutable AST).
+addition to the more obvious cases of normalizing whitespace and formatting
+markup, there’s also the fact that entity references cannot be restored after
+parsing. There are likely approaches one could take to achieve this, but they
+are far from trivial, and I imagine they would increase the complexity of the
+processor by an order of magnitude. Rather I think it is reasonable to say that,
+in a sense, XML is a lossy format — not in terms of document content, but in
+terms of the specific ways that document content is delivered. Another example
+of this is that we do not retain knowledge of which attributes were supplied as
+defaults and which were explicitly included in the source text.
 
-If called at the `Document` level, the xml declaration will always specify its
-encoding as "UTF8", its version as "1.0" (this is an XML 1.0 processor) and its
-standalone status as "yes", regardless of the original value, because the DTD
-will be rendered in its ‘synthesized’ form. I expect to refine this further in
-the future by accepting an options object.
+The formatted output tries to look good and gives you a number of options to
+control its appearance.
+
+#### `serializationOpts.attrInlineMax`
+
+You can set a threshold above which the number of attributes on an element
+guarantees the attributes each get a newline of their own; by default this is 1.
+
+In other words, given element `foo` with attribute `bar` and element `baz` with
+attributes `qux` and `quux`, the following will occur:
+
+```
+// attrInlineMax: 0
+<foo
+  bar="true"/>
+<baz
+  qux="true"
+  quux="true"/>
+
+// attrInlineMax: 1
+
+<foo bar="true"/>
+<baz
+  qux="true"
+  quux="true"/>
+
+// attrInlineMax: Infinity
+<foo bar="true"/>
+<baz qux="true" quux="true"/>
+```
+
+#### `serializationOpts.attrSort`
+
+If true (default), attributes are sorted alphabetically by key.
+
+#### `serializationOpts.comments`
+
+If true (default), comment nodes are included.
+
+#### `serializationOpts.depth`
+
+Integer >= 0 indicating the current indentation depth. Mainly intended for
+internal use as serialization propagates downward. Begins at 0 by default.
+
+#### `serializationOpts.dtd`
+
+If true (default), a doctype declaration is included if present.
+
+#### `serializationOpts.formatCDATA`
+
+If true (default), CDATA is formatted for clean multiline presentation in the
+output. This means whitespace is normalized and linebreaks may be inserted, so
+turn this off if CDATA whitespace should be considered significant. There are
+two exceptions built-in:
+
+- The content of explicit CDATA sections is always left as it was found.
+- The value of the nearest ancestral `xml:space` attribute is honored; if the
+  value is "preserve", formatting is not applied.
+
+#### `serializationOpts.formatComment`
+
+If true (default), comment content is formatted with linebreaks if needed.
+
+#### `serializationOpts.indent`
+
+Integer >= 0 specifying the number of spaces to use per indent. Defaults to 2.
+
+#### `serializationOpts.minWidth`
+
+Integer >= 0 specifying the minimum number of characters available as a line’s
+length after the indent. Defaults to 30. See `wrapColumn` for more.
+
+#### `serializationOpts.pis`
+
+If true (default), processing instruction nodes are included.
+
+#### `serializationOpts.preferSingle`
+
+If true, single quotes will be preferred for literals, e.g. attribute values and
+external IDs. Default is false.
+
+Note that it is ‘preferred’ because certain cases (system or public ID literals)
+may demand one or the other delimiter based on their content.
+
+#### `serializationOpts.selfClose`
+
+If true (default), empty elements will be represented using self-closing tags.
+
+#### `serializationOpts.wrapColumn`
+
+Integer >= 0 specifying the target max line length. Defaults to 80.
+
+The wrap column is not applied strictly. In document with deep nesting, trying
+to apply the rule with only an allowance for single tokens that cannot be split
+could produce very awkward results. The `minWidth` option complements
+`wrapColumn` to address this.
+
+For example, with the default options (80, 30), if your indentation depth is 60
+characters, the effective wrapColumn ends up being 90, so that there are still
+at least 30 characters of width available to format within.
+
+#### `serializationOpts.xmlDecl`
+
+If true (default), an xml declaration is included at the start of the document.
+This declaration will not specify an encoding.
 
 ### `ASTNode.prototype.toJSON()`
 

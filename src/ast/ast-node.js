@@ -2,6 +2,23 @@ const CHILD_PARENT_MAPPING = new WeakMap();
 
 import { isArrayIndex } from './ast-util';
 
+const SERIALIZATION_DEFAULTS = {
+  attrInlineMax: 1,
+  attrSort:      true,
+  comments:      true,
+  depth:         0,
+  dtd:           true,
+  formatCDATA:   true,
+  formatComment: true,
+  indent:        2,
+  minWidth:      30,
+  pis:           true,
+  preferSingle:  false,
+  selfClose:     true,
+  wrapColumn:    80,
+  xmlDecl:       true
+};
+
 export default
 class ASTNode extends Array {
   constructor() {
@@ -36,8 +53,15 @@ class ASTNode extends Array {
           return Reflect.get(nonArrayShadow, key);
         }
 
+        if (nonArray && key === 'length') {
+          return 0;
+        }
+
         return Reflect.get(target, key, receiver);
       },
+
+      has: (target, key) =>
+        Reflect.has(target, key) || Reflect.has(nonArrayShadow, key),
 
       ownKeys: target => {
         const keys = Reflect.ownKeys(target);
@@ -73,7 +97,7 @@ class ASTNode extends Array {
         }
 
         if (isIndex && nonArray) {
-          Reflect.set(nonArrayShadow, key, value);
+          return Reflect.set(nonArrayShadow, key, value);
         }
 
         CHILD_PARENT_MAPPING.delete(receiver[key]);
@@ -100,44 +124,6 @@ class ASTNode extends Array {
       }
     });
 
-    // Additionally, splice() demands special handling because it is ‘atomic’;
-    // enforcing sparseness after each assignment could make it go wonky. We
-    // simply remove fill() since it will never make sense here.
-
-    const target = this;
-
-    Object.defineProperties(proxy, {
-      fill: {
-        value: undefined
-      },
-      splice: {
-        value(index, count) {
-          if (this !== proxy) {
-            return Reflect.apply(Array.prototype.splice, this, arguments);
-          }
-
-          const oldMembers = target.slice(index, index + count);
-          const sentinel   = Symbol();
-
-          oldMembers
-            .filter(oldMember => oldMember instanceof ASTNode)
-            .forEach(oldMember => {
-              const { key } = CHILD_PARENT_MAPPING.get(oldMember);
-              CHILD_PARENT_MAPPING.delete(oldMember);
-              target[key] = sentinel;
-            });
-
-          Reflect.apply(Array.prototype.splice, proxy, arguments);
-
-          while (target.includes(sentinel)) {
-            target.splice(target.indexOf(sentinel), 1);
-          }
-
-          return oldMembers;
-        }
-      }
-    });
-
     return proxy;
   }
 
@@ -161,15 +147,15 @@ class ASTNode extends Array {
     return new Set();
   }
 
+  static get [Symbol.species]() {
+    return Array;
+  }
+
   // The typeName property provides an alternative way to introspect node type
   // without using instanceof.
 
   get typeName() {
     throw new Error('Not implemented');
-  }
-
-  get [Symbol.species]() {
-    return Array;
   }
 
   // Hierarchical accessors
@@ -211,6 +197,38 @@ class ASTNode extends Array {
 
   get root() {
     return (this.document || {}).root;
+  }
+
+  // Mutative (inserting) array method intercept
+
+  push() {
+    if (this.constructor.isArrayNode) {
+      return super.push(...arguments);
+    }
+  }
+
+  splice() {
+    if (!this.constructor.isArrayNode) {
+      return;
+    }
+
+    // Not efficient ... but not painful & mysterious. Maybe I will revisit this
+    // later, but splice is really overloaded and we have a lot of behavior we
+    // need to follow it (atomically).
+
+    const newMembership = [ ...this ];
+    const oldMembership = newMembership.splice(...arguments);
+
+    this.length = 0;
+    this.push(...newMembership);
+
+    return oldMembership;
+  }
+
+  unshift() {
+    if (this.constructor.isArrayNode) {
+      return super.unshift(...arguments);
+    }
   }
 
   // The clone() method creates a new (orphaned) node with the same properties
@@ -273,12 +291,37 @@ class ASTNode extends Array {
   // Transformation operations. These are augmented or overwritten in subclasses
   // for more specific behavior.
 
-  serialize() {
-    return this.map(node => node.serialize());
+  serialize(opts={}) {
+    const $opts = Object.assign({}, SERIALIZATION_DEFAULTS, opts);
+
+    const dtd = this.doctype;
+
+    if (dtd) {
+      const attlists = dtd
+        .getAll()
+        .filter(node => node.typeName === '#attlistDecl');
+
+      if (attlists.every(attlist => attlist.length < 2)) {
+        $opts.attdefLone = true;
+      } else {
+        const attdefs = attlists
+          .reduce((acc, node) => [ ...acc, ...node ], []);
+
+        $opts.attdefCols = [
+          Math.max(0, ...attdefs.map(attdef => attdef.name.length)),
+          Math.max(0, ...attdefs.map(attdef => attdef._attTypeCol)),
+          Math.max(0, ...attdefs.map(attdef => attdef._defaultTypeCol))
+        ];
+      }
+    }
+
+    opts._formatCDATA = opts.formatCDATA;
+
+    return this._serialize($opts);
   }
 
   toJSON() {
-    const nodeType = this.constructor.typeName;
+    const nodeType = this.typeName;
     const children = this.map(node => node.toJSON());
 
     if (this.constructor.isArrayNode) {
@@ -295,3 +338,6 @@ class ASTNode extends Array {
     this.forEach(node => node.validate());
   }
 }
+
+ASTNode.prototype.copyWithin = undefined;
+ASTNode.prototype.fill = undefined;

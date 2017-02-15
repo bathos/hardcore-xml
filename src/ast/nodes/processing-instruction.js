@@ -2,7 +2,9 @@ import assert  from 'assert';
 import ASTNode from '../ast-node';
 import text    from '../text';
 
-import { isName, isString, isXMLString, noQMGT, notXML } from '../ast-util';
+import {
+  indent, isName, isString, isXMLString, noQMGT, notXML
+} from '../ast-util';
 
 export default
 class ProcessingInstruction extends ASTNode {
@@ -21,9 +23,10 @@ class ProcessingInstruction extends ASTNode {
     return '#pi';
   }
 
-  serialize() {
-    return `<?${
-      [ this.target, this.instruction ].filter(Boolean).join(' ')
+  _serialize(opts) {
+    return `${ indent(opts) }<?${
+      this.target }${
+      this.instruction ? ` ${ this.instruction }` : ''
     }?>`;
   }
 

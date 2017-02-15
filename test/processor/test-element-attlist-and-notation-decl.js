@@ -99,6 +99,22 @@ tap.test('incorrect fixed attribute', test => {
   });
 });
 
+tap.test('missing fixed attribute', test => {
+  parse(`
+    <!DOCTYPE foo [
+      <!ELEMENT foo EMPTY>
+      <!ATTLIST foo
+        bar CDATA #FIXED "baz"
+      >
+    ]>
+
+    <foo/>
+  `).catch(err => {
+    test.match(err.message, 'bar');
+    test.end();
+  });
+});
+
 tap.test('existing attribute which had default', test => {
   parse(`
     <!DOCTYPE foo [
@@ -258,7 +274,7 @@ tap.test('NOTATION attribute behavior', test => {
       <!NOTATION qux PUBLIC "qux">
       <!NOTATION quux SYSTEM "quux">
       <!NOTATION corge PUBLIC "corgePublic" "corgeSystem">
-      <!ELEMENT foo EMPTY>
+      <!ELEMENT foo ANY>
       <!ATTLIST foo bar NOTATION (qux|quux|corge) #REQUIRED>
     ]>
 

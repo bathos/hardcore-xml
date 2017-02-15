@@ -4,13 +4,16 @@ import ExternalSubset from './doctype-external';
 import text           from '../text';
 
 import {
+  extID,
+  indent,
   isCodepoints,
   isString,
   isName,
   isPublicID,
   isXMLString,
   oneQuoteOnly,
-  serializeExternalID
+  quote,
+  refOut
 } from '../ast-util';
 
 const TYPES = new Set([ 'GENERAL', 'PARAMETER', 'UNPARSED' ]);
@@ -47,25 +50,27 @@ class EntityDeclaration extends ASTNode {
     return '#entityDecl';
   }
 
-  serialize() {
-    const { name, notationName, publicID, systemID, type, value } = this;
+  _serialize(opts) {
+    const { name, notationName, systemID, type, value } = this;
 
-    const symbol =
-      type === 'PARAMETER' &&
-      '%';
+    // If the entity is internal, the value needs to have certain codepoints
+    // converted to character references. The result may not be identical to the
+    // original input (parameter refs remain dereffed), but will yield the same
+    // result. Specifically, '<', quotes, and percent signs are transformed to
+    // char references, while '&' is transformed only if the next character is
+    // '#' (implying that originally there was a double escape which must now be
+    // restored).
+    //
+    // Note that any external entity which was used could be converted to an
+    // internal entity just by removing the external ID properties.
 
-    const externalID =
-      systemID &&
-      serializeExternalID({ publicID, systemID });
+    const symbol     = type === 'PARAMETER' && '%';
+    const externalID = systemID && extID(this, opts);
+    const valueEsc   = refOut(String.fromCodePoints(value));
+    const valueLit   = !externalID && quote(valueEsc, opts);
+    const ndata      = notationName && `NDATA ${ notationName }`;
 
-    const valueLit =
-      !externalID.length &&
-      `"${ String.fromCodePoints(value) }"`;
-
-    const ndata =
-      notationName && `NDATA ${ notationName }`;
-
-    return `<!ENTITY ${
+    return `${ indent(opts) }<!ENTITY ${
       [ symbol, name, externalID, valueLit, ndata ].filter(Boolean).join(' ')
     }>`;
   }

@@ -3,12 +3,13 @@ import ASTNode from '../ast-node';
 import text    from '../text';
 
 import {
+  extID,
+  indent,
   isName,
   isPublicID,
   isString,
   isXMLString,
-  oneQuoteOnly,
-  serializeExternalID
+  oneQuoteOnly
 } from '../ast-util';
 
 export default
@@ -29,8 +30,8 @@ class NotationDeclaration extends ASTNode {
     return '#notationDecl';
   }
 
-  serialize() {
-    return `<!NOTATION ${ this.name } ${ serializeExternalID(this) }>`;
+  _serialize(opts) {
+    return `${ indent(opts) }<!NOTATION ${ this.name } ${ extID(this, opts) }>`;
   }
 
   toJSON() {
@@ -42,13 +43,7 @@ class NotationDeclaration extends ASTNode {
   }
 
   validate() {
-    const {
-      doctype,
-      document,
-      name,
-      publicID,
-      systemID
-    } = this;
+    const { doctype, document, name, publicID, systemID } = this;
 
     assert(document,       text.requireDoc('Notation declaration'));
     assert(doctype,        text.requireDTD('Notation declaration'));

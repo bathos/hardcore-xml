@@ -6,7 +6,7 @@ import Element               from './element';
 import ProcessingInstruction from './processing-instruction';
 import text                  from '../text';
 
-import { isBoolean } from '../ast-util';
+import { isBoolean, quote } from '../ast-util';
 
 const VALID_CHILDREN = [
   Comment,
@@ -28,12 +28,20 @@ class Document extends ASTNode {
   }
 
   set doctype(doctype) {
-    assert(doctype instanceof Doctype, 'Doctype must be a Doctype.');
+    assert(
+      doctype === undefined || doctype instanceof Doctype,
+      'Doctype must be a Doctype.'
+    );
+
+    if (!doctype) {
+      this.doctype.remove();
+      return;
+    }
 
     if (this.doctype) {
       this.splice(this.indexOf(this.doctype), 1, doctype);
-    } else if (this.element) {
-      this.splice(this.indexOf(this.element), 0, doctype);
+    } else if (this.root) {
+      this.splice(this.indexOf(this.root), 0, doctype);
     } else {
       this.push(doctype);
     }
@@ -48,7 +56,15 @@ class Document extends ASTNode {
   }
 
   set root(elem) {
-    assert(elem instanceof Element, 'Root must be an Element.');
+    assert(
+      elem === undefined || elem instanceof Element,
+      'Root must be an Element.'
+    );
+
+    if (!elem) {
+      this.root.remove();
+      return;
+    }
 
     if (this.root) {
       this.splice(this.indexOf(this.root), 1, elem);
@@ -65,9 +81,28 @@ class Document extends ASTNode {
     return this.findDeep(node => node instanceof Element && node.id === id);
   }
 
-  serialize() {
-    const xmlDecl = `<?xml version="1.0" encoding="utf-8" standalone="yes"?>`;
-    return [ xmlDecl, ...super.serialize() ].join('\n');
+  _serialize(opts) {
+    const unrendered = [
+      !opts.dtd      && Doctype,
+      !opts.comments && Comment,
+      !opts.pis      && ProcessingInstruction
+    ].filter(Boolean);
+
+    const childStrings = this
+      .filter(node => unrendered.every(Node => !(node instanceof Node)))
+      .map(node => node._serialize(opts));
+
+    // Encoding is omitted, both because we do not know how it will be encoded
+    // ultimately and because, in practice, it is very unlikely to be something
+    // other than utf-8, which is default anyway.
+
+    if (opts.xmlDecl) {
+      childStrings.unshift(`<?xml version=${ quote('1.0', opts) }${
+        this.standalone ? ` standalone=${ quote('yes', opts) }` : ''
+      }?>`);
+    }
+
+    return childStrings.join('\n\n');
   }
 
   toJSON() {

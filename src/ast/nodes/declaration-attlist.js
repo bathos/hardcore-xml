@@ -3,7 +3,7 @@ import ASTNode           from '../ast-node';
 import AttdefDeclaration from './declaration-attdef';
 import text              from '../text';
 
-import { isName, isString } from '../ast-util';
+import { compareAlpha, indent, isName, isString } from '../ast-util';
 
 export default
 class AttlistDeclaration extends ASTNode {
@@ -25,15 +25,28 @@ class AttlistDeclaration extends ASTNode {
     return '#attlistDecl';
   }
 
-  serialize() {
-    const attdefs = super.serialize();
+  _serialize(opts) {
+    const prefix = `${ indent(opts) }<!ATTLIST ${ this.elementName }`;
 
-    if (attdefs.length === 1) {
-      return `<!ATTLIST ${ this.elementName } ${ attdefs[0] }>`;
+    if (!this.length) {
+      return `${ prefix }>`;
     }
 
-    return `<!ATTLIST ${ this.elementName }\n${
-      attdefs.map(attDef => `  ${ attDef }`).join('\n')
+    const childOpts = Object.assign(Object.create(opts), {
+      depth: opts.depth + 1
+    });
+
+    if (opts.attdefLone) {
+      childOpts.depth = 0;
+      return `${ prefix } ${ this[0]._serialize(childOpts) }>`;
+    }
+
+    const attdefs = opts.attrSort
+      ? [ ...this ].sort(({ name: a }, { name: b }) => compareAlpha(a, b))
+      : this;
+
+    return `${ prefix }\n${
+      attdefs.map(node => node._serialize(childOpts)).join('\n')
     }>`;
   }
 

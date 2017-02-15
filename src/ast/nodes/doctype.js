@@ -10,12 +10,13 @@ import ProcessingInstruction from './processing-instruction';
 import text                  from '../text';
 
 import {
+  extID,
+  indent,
   isName,
   isPublicID,
   isString,
   isXMLString,
-  oneQuoteOnly,
-  serializeExternalID
+  oneQuoteOnly
 } from '../ast-util';
 
 const VALID_CHILDREN = [
@@ -75,16 +76,27 @@ class DoctypeDeclaration extends ASTNode {
     );
   }
 
-  serialize() {
-    const { name }   = this;
-    const externalID = this.systemID && serializeExternalID(this);
-    const d1         = this.length && '[';
-    const d2         = this.length && ']';
-    const children   = super.serialize();
+  _serialize(opts) {
+    const unrendered = [
+      !opts.comments && Comment,
+      !opts.pis      && ProcessingInstruction
+    ].filter(Boolean);
 
-    return `<!DOCTYPE ${
-      [ name, externalID, d1, ...children, d2 ].filter(Boolean).join(' ')
-    }>`;
+    const childOpts = Object.assign(Object.create(opts), {
+      depth: opts.depth + 1
+    });
+
+    const childStrings = this
+      .filter(node => unrendered.every(Node => !(node instanceof Node)))
+      .map(node => node._serialize(childOpts));
+
+    const prefix = `${ indent(opts) }<!DOCTYPE ${ this.name }`;
+    const externalID = this.systemID ? ` ${ extID(this, opts) }` : '';
+    const suffix = childStrings.length
+      ? ` [\n${ childStrings.join('\n') }\n${ indent(opts) }]>`
+      : '>';
+
+    return `${ prefix }${ externalID }${ suffix }`;
   }
 
   toJSON() {

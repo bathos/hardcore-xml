@@ -5,7 +5,6 @@ import {
   isXMLChar
 } from '../data/codepoints';
 
-
 const MAX_INDEX = 2 ** 32 - 2;
 
 const toCodepoints = str =>
@@ -13,11 +12,57 @@ const toCodepoints = str =>
     .from(str)
     .map(char => char.codePointAt(0));
 
+export const compareAlpha =
+  new Intl.Collator().compare;
+
 export const escapeCDATA = str =>
   str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/\]\]>/g, ']]&gt;');
+
+export const extID = ({ publicID, systemID }, opts) => {
+  const keyword       = publicID ? 'PUBLIC' : 'SYSTEM';
+  const systemLiteral = systemID && quote(systemID, opts);
+  const publicLiteral = publicID && quote(publicID, opts);
+
+  return [ keyword, publicLiteral, systemLiteral ].filter(Boolean).join(' ');
+};
+
+export const format = (str, opts, outdented) => {
+  const lines      = [];
+  const words      = str.split(/ /g);
+  const headPrefix = indent(opts);
+  const restPrefix = outdented
+    ? indent(Object.assign({}, opts, { depth: opts.depth + 1 }))
+    : headPrefix;
+
+  while (words.length) {
+    const prefix = lines.length ? restPrefix : headPrefix;
+    const width  = Math.max(opts.minWidth, opts.wrapColumn - prefix.length);
+
+    let line = prefix + words.shift();
+    let word;
+
+    while (word = words.shift()) {
+      const newLength = line.length + word.length + 1;
+
+      if (newLength <= width) {
+        line += ` ${ word }`;
+      } else {
+        words.unshift(word);
+        break;
+      }
+    }
+
+    lines.push(line);
+  }
+
+  return lines.join('\n');
+};
+
+export const indent = ({ depth, indent }) =>
+  ' '.repeat(indent * depth);
 
 export const isArrayIndex = key =>
   typeof key === 'string' &&
@@ -72,15 +117,23 @@ export const oneQuoteOnly = str =>
   !str.includes('\'') ||
   !str.includes('"');
 
-export const serializeExternalID = ({ publicID, systemID }) => {
-  const keyword       = publicID ? 'PUBLIC' : 'SYSTEM';
-  const systemLiteral = systemID && serializeSystemLiteral(systemID);
-  const publicLiteral = publicID && `"${ publicID }"`;
+export const quote = (str, { preferSingle }, mayEscape) => {
+  const delim = preferSingle
+    ? mayEscape || !str.includes('\'') ? '\'' : '"'
+    : mayEscape || !str.includes('"') ? '"' : '\'';
 
-  return [ keyword, publicLiteral, systemLiteral ].filter(Boolean).join(' ');
+  const esc = delim === '"'
+    ? '&quot;'
+    : '&apos;';
+
+  const value = mayEscape ? str.replace(new RegExp(delim, 'g'), esc) : str;
+
+  return `${ delim }${ value }${ delim }`;
 };
 
-export const serializeSystemLiteral = str =>
-  str.includes('"')
-    ? `'${ str }'`
-    : `"${ str }"`;
+export const refOut = str => str
+  .replace(/[<%'"]/g, char => `&#x${ char.codepointAt(0).toString(16) };`)
+  .replace(/&#/g, '&#x26;#');
+
+export const ws = str => str
+  .replace(/\s+/g, ' ').trim();

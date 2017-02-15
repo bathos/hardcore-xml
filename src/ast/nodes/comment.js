@@ -2,7 +2,9 @@ import assert  from 'assert';
 import ASTNode from '../ast-node';
 import text    from '../text';
 
-import { isString, isXMLString, noDoubleHyphen } from '../ast-util';
+import {
+  format, indent, isString, isXMLString, noDoubleHyphen, ws
+} from '../ast-util';
 
 export default
 class Comment extends ASTNode {
@@ -19,8 +21,20 @@ class Comment extends ASTNode {
     return '#comment';
   }
 
-  serialize() {
-    return `<!--${ this.content }-->`;
+  _serialize(opts) {
+    if (!opts.formatComment) {
+      return `${ indent(opts) }<!--${ this.content }-->`;
+    }
+
+    const comment = `<!-- ${ ws(this.content) } -->`;
+
+    const singleLine = `${ indent(opts) }${ comment }`;
+
+    if (singleLine.length <= opts.wrapColumn) {
+      return singleLine;
+    }
+
+    return format(comment, opts, true);
   }
 
   toJSON() {

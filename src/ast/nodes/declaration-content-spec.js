@@ -97,12 +97,14 @@ class ContentSpecDeclaration extends ASTNode {
     return new RegExp(`^${ this._pattern }$`);
   }
 
-  serialize() {
-    const sep = this.type === 'CHOICE' ? ',' : '|';
+  _serialize() {
+    const sep = this.type === 'CHOICE' ? '|' : ', ';
 
-    return this.type === 'ELEMENT'
-      ? `${ this.name }${ this.qualifier || '' }`
-      : `(${ super.serialize().join(sep) })${ this.qualifier || '' }`;
+    const str = this.type === 'ELEMENT'
+      ? this.name
+      : `(${ this.map(node => node._serialize()).join(sep) })`;
+
+    return `${ str }${ this.qualifier || '' }`;
   }
 
   toJSON() {
@@ -124,7 +126,10 @@ class ContentSpecDeclaration extends ASTNode {
       assert(this.length === 0,   text.csElementNoChildren);
     } else {
       assert(this.name === undefined, text.csNameOnlyElement);
-      assert(this.length,             text.csNeedsChildren);
+
+      if (!this.parent.mixed) {
+        assert(this.length, text.csNeedsChildren);
+      }
 
       if (this.type === 'CHOICE') {
         const entryNames       = this.entryNames();

@@ -15,8 +15,8 @@ class ExternalSubset extends ASTNode {
     return '#extSubset';
   }
 
-  serialize() {
-    return super.serialize().join('\n');
+  _serialize(opts) {
+    return this.map(node => node._serialize(opts)).join('\n');
   }
 
   validate() {
