@@ -212,10 +212,10 @@ class AttdefDeclaration extends ASTNode {
       }, { value: '', offset: 0 });
 
     if (defaultValue) {
-      return `${ indent(opts) }${ value } ${ defaultValue }`;
+      return `${ indent(opts) }${ value.slice(1) } ${ defaultValue }`;
     }
 
-    return `${ indent(opts) }${ value.trimRight() }`;
+    return `${ indent(opts) }${ value.trimRight().slice(1) }`;
   }
 
   toJSON() {

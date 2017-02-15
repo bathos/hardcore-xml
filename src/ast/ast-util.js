@@ -132,8 +132,8 @@ export const quote = (str, { preferSingle }, mayEscape) => {
 };
 
 export const refOut = str => str
-  .replace(/[<%'"]/g, char => `&#x${ char.codepointAt(0).toString(16) };`)
-  .replace(/&#/g, '&#x26;#');
+  .replace(/&#/g, '&#x26;#')
+  .replace(/[<%'"]/g, char => `&#x${ char.codePointAt(0).toString(16) };`);
 
 export const ws = str => str
   .replace(/\s+/g, ' ').trim();

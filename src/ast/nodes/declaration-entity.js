@@ -66,7 +66,7 @@ class EntityDeclaration extends ASTNode {
 
     const symbol     = type === 'PARAMETER' && '%';
     const externalID = systemID && extID(this, opts);
-    const valueEsc   = refOut(String.fromCodePoints(value));
+    const valueEsc   = value && refOut(String.fromCodePoint(...value));
     const valueLit   = !externalID && quote(valueEsc, opts);
     const ndata      = notationName && `NDATA ${ notationName }`;
 
@@ -82,7 +82,7 @@ class EntityDeclaration extends ASTNode {
       publicID:     this.publicID,
       systemID:     this.systemID,
       type:         this.type,
-      value:        !this.systemID && String.fromCodePoints(...this.value)
+      value:        !this.systemID && String.fromCodePoint(...this.value)
     });
   }
 

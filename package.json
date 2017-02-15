@@ -38,7 +38,7 @@
     "test": "npm run build-cjs && tap test/**/test-*.js",
     "test-local": "npm run build-cjs && TAP_RCFILE=./.taprc tap test/**/test-*.js"
   },
-  "version": "2.0.0",
+  "version": "1.0.0",
   "dependencies": {
     "string.prototype.padend": "3.0.0"
   }

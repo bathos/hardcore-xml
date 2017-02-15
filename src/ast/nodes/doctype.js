@@ -47,6 +47,10 @@ class DoctypeDeclaration extends ASTNode {
     return new Set([ 'external' ]);
   }
 
+  get doctype() {
+    return this;
+  }
+
   get typeName() {
     return '#doctypeDecl';
   }
